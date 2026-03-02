@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CornerScout — Ao Vivo</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{--bg:#0a0e1a;--surface:#111827;--card:#1a2235;--border:#2a3550;--accent:#00e5a0;--accent2:#3b82f6;--warn:#f59e0b;--danger:#ef4444;--text:#e2e8f0;--muted:#64748b}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+  header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:100}
+  .logo{display:flex;align-items:center;gap:10px;font-size:1.1rem;font-weight:700;color:var(--accent)}
+  .logo span{color:var(--text)}
+  .live-badge{background:var(--danger);color:#fff;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:999px;animation:pulse 1.5s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+  .header-right{display:flex;align-items:center;gap:12px;font-size:.8rem;color:var(--muted)}
+  .clock{color:var(--accent);font-weight:600}
+  .refresh-btn{background:var(--card);border:1px solid var(--border);color:var(--muted);padding:5px 12px;border-radius:8px;font-size:.75rem;cursor:pointer;transition:all .2s}
+  .refresh-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .main{max-width:1100px;margin:0 auto;padding:20px 16px}
+  .stats-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
+  .stat-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center}
+  .stat-card .val{font-size:1.6rem;font-weight:800;color:var(--accent)}
+  .stat-card .lbl{font-size:.68rem;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.5px}
+  .robot-insight{background:linear-gradient(135deg,#00e5a010,#3b82f610);border:1px solid #00e5a030;border-radius:14px;padding:14px 18px;margin-bottom:20px;display:flex;gap:12px;align-items:flex-start}
+  .robot-icon{font-size:1.8rem;flex-shrink:0}
+  .robot-text strong{display:block;color:var(--accent);font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+  .robot-text p{font-size:.83rem;line-height:1.5}
+  .filters{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+  .filter-btn{background:var(--card);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:999px;font-size:.78rem;cursor:pointer;transition:all .2s}
+  .filter-btn:hover,.filter-btn.active{background:var(--accent);color:#000;border-color:var(--accent);font-weight:700}
+  .section-title{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px}
+  .games-grid{display:grid;gap:12px;margin-bottom:28px}
+  .game-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;position:relative;overflow:hidden;transition:border-color .2s,transform .15s}
+  .game-card:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .game-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:4px 0 0 4px}
+  .game-card.hot::before{background:var(--accent)}
+  .game-card.medium::before{background:var(--warn)}
+  .game-card.low::before{background:var(--muted)}
+  .card-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .league{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .card-badges{display:flex;gap:6px}
+  .badge{font-size:.63rem;font-weight:700;padding:2px 8px;border-radius:999px;text-transform:uppercase}
+  .badge-live{background:#ef444420;color:var(--danger);border:1px solid #ef444440}
+  .badge-hot{background:#00e5a020;color:var(--accent);border:1px solid #00e5a040}
+  .badge-pre{background:#3b82f620;color:var(--accent2);border:1px solid #3b82f640}
+  .match-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .team{font-size:.95rem;font-weight:700;flex:1}
+  .team.right{text-align:right}
+  .score-box{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:5px 12px;text-align:center;min-width:75px}
+  .score{font-size:1rem;font-weight:800}
+  .match-time{font-size:.62rem;color:var(--accent);margin-top:2px;font-weight:600}
+  .indicators{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:12px}
+  .indicator{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:7px;text-align:center}
+  .ind-val{font-size:.95rem;font-weight:700}
+  .ind-lbl{font-size:.58rem;color:var(--muted);margin-top:2px;text-transform:uppercase}
+  .tips-row{display:flex;gap:7px;flex-wrap:wrap}
+  .tip{display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:.76rem;font-weight:600;flex:1;min-width:140px}
+  .tip-conf{font-size:.68rem;font-weight:800;padding:2px 7px;border-radius:999px;white-space:nowrap}
+  .conf-high{background:#00e5a020;color:var(--accent)}
+  .conf-med{background:#f59e0b20;color:var(--warn)}
+  .conf-low{background:#64748b20;color:var(--muted)}
+  .conf-bar-wrap{margin-top:10px}
+  .conf-bar-label{display:flex;justify-content:space-between;font-size:.68rem;color:var(--muted);margin-bottom:3px}
+  .conf-bar-track{height:5px;background:var(--bg);border-radius:999px;overflow:hidden}
+  .conf-bar-fill{height:100%;border-radius:999px;transition:width .8s ease}
+  .empty-state{text-align:center;padding:48px 20px;color:var(--muted)}
+  .empty-state .icon{font-size:3rem;margin-bottom:12px}
+  .empty-state p{font-size:.85rem;line-height:1.6}
+  .error-banner{background:#ef444415;border:1px solid #ef444430;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:.8rem;color:#ef4444;display:none}
+  .countdown{font-size:.72rem;color:var(--muted);text-align:right;margin-bottom:8px}
+  .countdown span{color:var(--accent);font-weight:600}
+  .disclaimer{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;font-size:.7rem;color:var(--muted);text-align:center;line-height:1.6}
+  .loading-overlay{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;transition:opacity .6s}
+  .loading-overlay.hidden{opacity:0;pointer-events:none}
+  .spinner{width:44px;height:44px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-bottom:14px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .loading-text{color:var(--accent);font-size:.88rem;font-weight:600}
+  .loading-sub{color:var(--muted);font-size:.73rem;margin-top:6px}
+  @media(max-width:600px){.stats-bar{grid-template-columns:repeat(2,1fr)}.indicators{grid-template-columns:repeat(2,1fr)}.team{font-size:.85rem}}
+</style>
+</head>
+<body>
+<div class="loading-overlay" id="loader">
+  <div class="spinner"></div>
+  <div class="loading-text">Conectando à API...</div>
+  <div class="loading-sub" id="loading-sub">Buscando jogos ao vivo...</div>
+</div>
+<header>
+  <div class="logo">⚽ Corner<span>Scout</span> <span class="live-badge">AO VIVO</span></div>
+  <div class="header-right">
+    <button class="refresh-btn" onclick="fetchData()">↻ Atualizar</button>
+    <span class="clock" id="clock">--:--:--</span>
+  </div>
+</header>
+<div class="main">
+  <div class="stats-bar">
+    <div class="stat-card"><div class="val" id="stat-live">—</div><div class="lbl">Jogos ao vivo</div></div>
+    <div class="stat-card"><div class="val" style="color:var(--accent)" id="stat-hot">—</div><div class="lbl">Dicas quentes 🔥</div></div>
+    <div class="stat-card"><div class="val" style="color:var(--warn)" id="stat-corners">—</div><div class="lbl">Média escanteios</div></div>
+    <div class="stat-card"><div class="val" style="color:var(--accent2)" id="stat-leagues">—</div><div class="lbl">Ligas ao vivo</div></div>
+  </div>
+  <div class="robot-insight">
+    <div class="robot-icon">🤖</div>
+    <div class="robot-text">
+      <strong>Insight do Scout</strong>
+      <p id="insight-text">Conectando aos dados em tempo real...</p>
+    </div>
+  </div>
+  <div class="error-banner" id="error-banner"></div>
+  <div class="filters">
+    <button class="filter-btn active" onclick="filterCards('all',this)">Todos</button>
+    <button class="filter-btn" onclick="filterCards('hot',this)">🔥 Quentes</button>
+    <button class="filter-btn" onclick="filterCards('live',this)">🔴 Ao Vivo</button>
+    <button class="filter-btn" onclick="filterCards('high',this)">📐 Over 9.5+</button>
+    <button class="filter-btn" onclick="filterCards('ht',this)">⏱ 1º Tempo</button>
+  </div>
+  <div class="section-title">Análise de Mercados — Escanteios</div>
+  <div class="countdown" id="countdown">Próxima atualização em <span id="timer">180</span>s</div>
+  <div class="games-grid" id="games-grid"></div>
+  <div class="disclaimer">⚠️ CornerScout é uma ferramenta de análise estatística. As dicas são baseadas em dados históricos e métricas ao vivo — não garantem resultados. Aposte com responsabilidade.</div>
+</div>
+<script>
+// A única diferença: chama /api/football?endpoint=... em vez da API diretamente
+const REFRESH_INTERVAL = 180;
+let allGames = [], activeFilter = 'all', countdown = REFRESH_INTERVAL;
+
+async function apiFetch(endpoint) {
+  const res = await fetch(`/api/football?endpoint=${encodeURIComponent(endpoint)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function fetchData() {
+  showError('');
+  try {
+    const liveData = await apiFetch('/fixtures?live=all');
+    if (!liveData.response || liveData.response.length === 0) {
+      const today = new Date().toISOString().split('T')[0];
+      const todayData = await apiFetch(`/fixtures?date=${today}&timezone=America/Sao_Paulo`);
+      processFixtures(todayData.response || [], false);
+    } else {
+      const fixtures = liveData.response.slice(0, 8);
+      const enriched = await enrichWithStats(fixtures);
+      processFixtures(enriched, true);
+    }
+    document.getElementById('loader').classList.add('hidden');
+  } catch (err) {
+    showError('Erro ao conectar. Verifique a configuração do backend.');
+    document.getElementById('loader').classList.add('hidden');
+    loadDemoData();
+  }
+}
+
+async function enrichWithStats(fixtures) {
+  const toEnrich = fixtures.slice(0, 5);
+  const results = await Promise.allSettled(
+    toEnrich.map(f => apiFetch(`/fixtures/statistics?fixture=${f.fixture.id}&type=Corner Kicks`))
+  );
+  return fixtures.map((f, i) => {
+    if (i < results.length && results[i].status === 'fulfilled') f._cornerStats = results[i].value.response;
+    return f;
+  });
+}
+
+function processFixtures(fixtures, isLive) {
+  allGames = fixtures.map(f => {
+    const {fixture, league, teams, goals} = f;
+    let cornersHome = 0, cornersAway = 0;
+    if (f._cornerStats && f._cornerStats.length >= 2) {
+      cornersHome = parseInt(f._cornerStats[0]?.statistics?.find(s=>s.type==='Corner Kicks')?.value) || 0;
+      cornersAway = parseInt(f._cornerStats[1]?.statistics?.find(s=>s.type==='Corner Kicks')?.value) || 0;
+    }
+    const cornersTotal = cornersHome + cornersAway;
+    const elapsed = fixture.status?.elapsed || 0;
+    const statusShort = fixture.status?.short || '';
+    const isLiveGame = ['1H','2H','ET','HT','LIVE'].includes(statusShort);
+    let xCorners = 0, pressure = 0;
+    if (isLiveGame && elapsed > 0) {
+      xCorners = parseFloat(((cornersTotal / elapsed) * 90).toFixed(1));
+      pressure = Math.min(99, Math.round((xCorners / 10) * 70 + Math.random() * 15));
+    }
+    const tips = generateTips(cornersTotal, xCorners, elapsed, isLiveGame);
+    const topConf = tips[0]?.conf || 0;
+    const heat = topConf >= 75 ? 'hot' : topConf >= 50 ? 'medium' : 'low';
+    const scoreStr = isLiveGame || statusShort==='FT' ? `${goals.home??0} - ${goals.away??0}` : '—';
+    let timeStr = '';
+    if (isLiveGame) timeStr = `${elapsed}'`;
+    else if (statusShort==='HT') timeStr = 'Intervalo';
+    else if (statusShort==='FT') timeStr = 'Encerrado';
+    else if (statusShort==='NS') timeStr = new Date(fixture.date).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    else timeStr = statusShort;
+    return {id:fixture.id, league:`${league.name} ${getFlagEmoji(league.country)}`, home:teams.home.name, away:teams.away.name, score:scoreStr, time:timeStr, status:isLiveGame?'live':'pre', heat, corners:{home:cornersHome,away:cornersAway,total:cornersTotal}, xCorners:xCorners||'—', pressure, tips};
+  });
+  updateStats(); updateInsight(); renderCards(activeFilter);
+}
+
+function generateTips(corners, xCorners, elapsed, isLive) {
+  const tips = [];
+  if (!isLive) { tips.push({icon:'📐',text:'Over 9.5 Escanteios',conf:65,level:'med'}); return tips; }
+  [8.5,9.5,10.5,11.5].forEach(line => {
+    if (xCorners > line + 1) {
+      const conf = Math.min(95, Math.round(70 + (xCorners - line) * 5));
+      tips.push({icon:'📐', text:`Over ${line} Escanteios`, conf, level:conf>=75?'high':'med'});
+    }
+  });
+  if (elapsed < 40 && corners >= 4) {
+    const conf = Math.min(90, Math.round(55 + corners * 5));
+    tips.push({icon:'⏱️', text:'Over 4.5 — 1º Tempo', conf, level:conf>=70?'high':'med'});
+  }
+  if (elapsed > 0 && (corners/elapsed) > 0.12) tips.push({icon:'🏁',text:'Escanteio próx. 5min',conf:68,level:'med'});
+  if (tips.length===0) tips.push({icon:'📐',text:'Baixo volume — aguardar',conf:30,level:'low'});
+  tips.sort((a,b)=>b.conf-a.conf);
+  return tips.slice(0,2);
+}
+
+function updateStats() {
+  document.getElementById('stat-live').textContent = allGames.filter(g=>g.status==='live').length;
+  document.getElementById('stat-hot').textContent  = allGames.filter(g=>g.heat==='hot').length;
+  document.getElementById('stat-leagues').textContent = new Set(allGames.map(g=>g.league)).size;
+  const avg = allGames.length ? (allGames.reduce((s,g)=>s+(g.corners.total||0),0)/allGames.length).toFixed(1) : '—';
+  document.getElementById('stat-corners').textContent = avg;
+}
+
+function updateInsight() {
+  const hot = allGames.filter(g=>g.heat==='hot');
+  let msg = hot.length===0 ? 'Nenhum jogo com alta confiança no momento. Monitorando todos os jogos ao vivo.'
+    : hot.length===1 ? `${hot[0].home} vs ${hot[0].away}: ${hot[0].tips[0]?.text} com ${hot[0].tips[0]?.conf}% de confiança.`
+    : `${hot.length} jogos com alta confiança: ${hot.map(g=>`${g.home} vs ${g.away}`).slice(0,2).join(', ')}. Foco nos mercados Over.`;
+  document.getElementById('insight-text').textContent = msg;
+}
+
+function renderCards(filter) {
+  const grid = document.getElementById('games-grid');
+  let f = allGames;
+  if (filter==='hot') f=allGames.filter(g=>g.heat==='hot');
+  else if (filter==='live') f=allGames.filter(g=>g.status==='live');
+  else if (filter==='high') f=allGames.filter(g=>g.tips.some(t=>t.level==='high'));
+  else if (filter==='ht') f=allGames.filter(g=>g.tips.some(t=>t.text.includes('1º Tempo')));
+  if (!f.length) { grid.innerHTML=`<div class="empty-state"><div class="icon">⚽</div><p>Nenhum jogo encontrado para este filtro.</p></div>`; return; }
+  grid.innerHTML=f.map(g=>{
+    const c=g.tips[0]?.conf||0, col=c>=75?'#00e5a0':c>=55?'#f59e0b':'#64748b';
+    const sb=g.status==='live'?`<span class="badge badge-live">🔴 Ao Vivo</span>`:`<span class="badge badge-pre">⏳ Pré-jogo</span>`;
+    const hb=g.heat==='hot'?`<span class="badge badge-hot">🔥 Quente</span>`:'';
+    const tips=g.tips.map(t=>`<div class="tip"><span>${t.icon}</span><span style="flex:1">${t.text}</span><span class="tip-conf conf-${t.level}">${t.conf}%</span></div>`).join('');
+    return `<div class="game-card ${g.heat}">
+      <div class="card-top"><span class="league">${g.league}</span><div class="card-badges">${hb}${sb}</div></div>
+      <div class="match-row"><div class="team">${g.home}</div><div class="score-box"><div class="score">${g.score}</div><div class="match-time">${g.time}</div></div><div class="team right">${g.away}</div></div>
+      <div class="indicators">
+        <div class="indicator"><div class="ind-val">${g.corners.total}</div><div class="ind-lbl">Escanteios</div></div>
+        <div class="indicator"><div class="ind-val">${g.corners.home}/${g.corners.away}</div><div class="ind-lbl">Casa/Fora</div></div>
+        <div class="indicator"><div class="ind-val">${g.xCorners}</div><div class="ind-lbl">xCorners</div></div>
+        <div class="indicator"><div class="ind-val">${g.pressure}%</div><div class="ind-lbl">Pressão</div></div>
+      </div>
+      <div class="tips-row">${tips}</div>
+      <div class="conf-bar-wrap"><div class="conf-bar-label"><span>Confiança do Scout</span><span style="color:${col};font-weight:700">${c}%</span></div><div class="conf-bar-track"><div class="conf-bar-fill" style="width:${c}%;background:${col}"></div></div></div>
+    </div>`;
+  }).join('');
+}
+
+function filterCards(type,btn){document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');activeFilter=type;renderCards(type);}
+function getFlagEmoji(c){return({'England':'🏴󠁧󠁢󠁥󠁮󠁧󠁿','Brazil':'🇧🇷','France':'🇫🇷','Spain':'🇪🇸','Germany':'🇩🇪','Italy':'🇮🇹','Portugal':'🇵🇹','Netherlands':'🇳🇱','World':'🌍','Europe':'🇪🇺'})[c]||'⚽';}
+function showError(msg){const el=document.getElementById('error-banner');if(msg){el.textContent='⚠️ '+msg;el.style.display='block';}else el.style.display='none';}
+function loadDemoData(){
+  allGames=[
+    {id:1,league:"Premier League 🏴󠁧󠁢󠁥󠁮󠁧󠁿",home:"Arsenal",away:"Chelsea",score:"1 - 0",time:"58'",status:"live",heat:"hot",corners:{home:7,away:3,total:10},xCorners:12.4,pressure:87,tips:[{icon:"📐",text:"Over 9.5 Escanteios",conf:91,level:"high"},{icon:"⏱️",text:"Over 5.5 — 2º Tempo",conf:78,level:"high"}]},
+    {id:2,league:"Brasileirão 🇧🇷",home:"Flamengo",away:"Palmeiras",score:"2 - 1",time:"71'",status:"live",heat:"medium",corners:{home:5,away:4,total:9},xCorners:10.2,pressure:61,tips:[{icon:"📐",text:"Over 9.5 Escanteios",conf:62,level:"med"}]},
+  ];
+  updateStats();updateInsight();renderCards(activeFilter);
+  showError('Modo demo ativo. Configure a variável API_FOOTBALL_KEY no Vercel.');
+}
+
+setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString('pt-BR');},1000);
+setInterval(()=>{countdown--;document.getElementById('timer').textContent=countdown;if(countdown<=0){countdown=REFRESH_INTERVAL;fetchData();}},1000);
+document.getElementById('clock').textContent=new Date().toLocaleTimeString('pt-BR');
+fetchData();
+</script>
+</body>
+</html>
