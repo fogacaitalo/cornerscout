@@ -135,21 +135,21 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .pl-sval{font-size:22px;font-weight:800;font-family:'JetBrains Mono',monospace}
 .pl-slbl{font-size:9px;color:var(--t3);text-transform:uppercase;margin-top:2px}
 .pl-loading{text-align:center;padding:40px 20px;color:var(--t3)}
-/* Detail sub-tabs */
-.det-tabs{display:flex;gap:2px;margin-bottom:10px;background:var(--bg0);border-radius:8px;padding:2px;border:1px solid var(--brd)}
-.det-tab{flex:1;padding:7px 4px;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer;border:none;background:0;color:var(--t3);transition:all .2s;font-family:'Outfit',sans-serif;text-align:center}
-.det-tab:hover{color:var(--t1)}.det-tab.on{background:var(--green);color:var(--bg0)}
-/* Corner half split */
-.csplit{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
-.csplit-box{background:var(--bg1);border-radius:var(--rs);padding:10px;border:1px solid var(--brd)}
-.csplit-title{font-size:10px;color:var(--t3);text-transform:uppercase;text-align:center;margin-bottom:8px;font-weight:600}
-.csplit-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}
-.csplit-name{font-size:10px;color:var(--t2);width:28px;text-align:right;flex-shrink:0}
-.csplit-bar{flex:1;height:18px;background:var(--bg0);border-radius:4px;overflow:hidden;position:relative}
-.csplit-fill{height:100%;border-radius:4px;transition:width .5s;display:flex;align-items:center;justify-content:flex-end;padding-right:5px;min-width:18px}
-.csplit-fill span{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5)}
-.csplit-total{text-align:center;font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;margin-top:4px}
-/* Race section */
+/* Section dividers inside detail */
+.det-sec{margin-top:12px;padding-top:10px;border-top:1px solid var(--brd)}
+.det-sec-title{font-size:11px;font-weight:700;color:var(--t1);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.det-sec-title span{font-size:14px}
+/* Corner half bars inline */
+.chalf{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}
+.chalf-box{background:var(--bg1);border-radius:var(--rs);padding:8px 10px}
+.chalf-label{font-size:9px;color:var(--t3);text-transform:uppercase;margin-bottom:4px;text-align:center}
+.chalf-row{display:flex;align-items:center;gap:6px}
+.chalf-name{font-size:9px;color:var(--t2);width:26px;text-align:right;flex-shrink:0}
+.chalf-bar{flex:1;height:14px;background:var(--bg0);border-radius:3px;overflow:hidden}
+.chalf-fill{height:100%;border-radius:3px;display:flex;align-items:center;justify-content:center;min-width:14px;transition:width .4s}
+.chalf-fill span{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.chalf-total{text-align:center;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;margin-top:4px}
+/* Race bars */
 .race{margin-bottom:10px}
 .race-title{font-size:11px;font-weight:700;color:var(--t1);margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .race-title span{font-size:14px}
@@ -247,7 +247,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
     <div class="strat-steps">
       <div class="sstep"><div class="snum">1</div><div class="stxt"><strong>HT ≥ 60%</strong><br>Ambos com gol no 1ºT em ≥60% dos jogos.</div></div>
       <div class="sstep"><div class="snum">2</div><div class="stxt"><strong>Odd ≥ 1.80</strong><br>Odd justa de Ov 0.5 1ºT.</div></div>
-      <div class="sstep"><div class="snum">3</div><div class="stxt"><strong>APPM > Min</strong><br>Ataques perigosos acima do tempo.</div></div>
+      <div class="sstep"><div class="snum">3</div><div class="stxt"><strong>APPM > 1.0</strong><br>Ataques perigosos por minuto acima de 1.0 (jogo intenso).</div></div>
     </div>
   </div>
   <div class="algo-info"><strong>📐 v3.4:</strong> <code>Jogo</code> | <code>1ºT</code> | <code>2ºT</code> | <code>Race</code> | <code>Over 0.5 1ºT</code> | <code>Pré-Live</code>. 8 ligas.</div>
@@ -277,7 +277,8 @@ function unlock(){$('gate').classList.add('hidden');$('mainApp').classList.remov
 document.addEventListener('DOMContentLoaded',()=>{$('gateInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')tryLogin()});if(sessionStorage.getItem('cs3a')==='1')unlock()});
 
 // CONFIG
-const ALLOWED=[39,78,140,135,61,71,2,3];
+// PL,BL,LL,SA,L1,BR,UCL,UEL + Paulistão,Carioca,Mineiro,Gaúcho
+const ALLOWED=[39,78,140,135,61,71,2,3,475,476,477,478];
 const ODDS_TTL=10*60*1000,HIST_TTL=24*60*60*1000;
 let games=[],gStats={},gEvents={},oddsData={},tHist={},expanded=new Set();
 let apiN=0,oddsN=0,isDemoMode=false,soundOn=false,cFilt='all',cLg='all';
@@ -412,7 +413,7 @@ async function toggle(fid){if(expanded.has(fid)){collapse(fid);return}expanded.a
   renderDet(fid)}
 function collapse(fid){expanded.delete(fid);renderAll()}
 
-// RENDER DETAIL
+// RENDER DETAIL (all inline, no sub-tabs)
 function renderDet(fid){
   const g=games.find(g=>g.fixture.id===fid);if(!g)return;
   const st=gStats[fid],det=$('det-'+fid),htd=$('htd-'+fid),p=ph(g.fixture.status),m=minN(g.fixture.status);
@@ -427,163 +428,137 @@ function renderDet(fid){
   const yH=getStat(st,hI,'Yellow Cards'),yA=getStat(st,aI,'Yellow Cards');
   const oH=getStat(st,hI,'Offsides'),oA=getStat(st,aI,'Offsides');
 
-  // Corner event splits
+  // Corner splits from events
   const evts=gEvents[fid];
   const cs=cornerSplits(evts,hI,aI);
-  // If no events data, estimate from status
   const in1H=is1H(g.fixture.status)||isHTB(g.fixture.status);
   const h1H=evts?cs.h1H:(in1H?hC:Math.round(hC*0.48));
   const h1A=evts?cs.h1A:(in1H?aC:Math.round(aC*0.48));
   const h2H=evts?cs.h2H:(in1H?0:hC-h1H);
   const h2A=evts?cs.h2A:(in1H?0:aC-h1A);
   const t1=h1H+h1A, t2=h2H+h2A;
-
-  // Rates for race calc
   const rateH=m>0?hC/m:0, rateA=m>0?aC/m:0;
 
-  // Helper: stat row
-  function row(l,h,a,c1='var(--blue)',c2='var(--purple)'){const t=h+a||1;return'<div class="st-row"><span class="st-val" style="color:'+c1+'">'+h+'</span><div class="st-bar"><div class="st-bar-fill" style="width:'+(h/t*100)+'%;background:'+c1+'"></div></div><span class="st-label">'+l+'</span><div class="st-bar"><div class="st-bar-fill" style="width:'+(a/t*100)+'%;background:'+c2+';margin-left:auto"></div></div><span class="st-val" style="color:'+c2+'">'+a+'</span></div>'}
-
-  // Helper: corner bar
-  function cbar(val,max,color){const w=max>0?Math.max(8,val/max*100):8;return'<div class="csplit-fill" style="width:'+w+'%;background:'+color+'"><span>'+val+'</span></div>'}
-
-  // xCorners
-  const xCv=p==='live'?xC(m,tC):tC,tips=p==='live'?cTips(xCv,m):[];
-
-  // Home/away short names
+  // Short names
   const hN=g.teams.home.name.length>10?g.teams.home.name.slice(0,8)+'…':g.teams.home.name;
   const aN=g.teams.away.name.length>10?g.teams.away.name.slice(0,8)+'…':g.teams.away.name;
   const maxC=Math.max(hC,aC,h1H,h1A,h2H,h2A,1);
 
-  // ===== BUILD CORNER DETAIL (tabbed) =====
+  function row(l,h,a,c1,c2){c1=c1||'var(--blue)';c2=c2||'var(--purple)';var t=h+a||1;return'<div class="st-row"><span class="st-val" style="color:'+c1+'">'+h+'</span><div class="st-bar"><div class="st-bar-fill" style="width:'+(h/t*100)+'%;background:'+c1+'"></div></div><span class="st-label">'+l+'</span><div class="st-bar"><div class="st-bar-fill" style="width:'+(a/t*100)+'%;background:'+c2+';margin-left:auto"></div></div><span class="st-val" style="color:'+c2+'">'+a+'</span></div>'}
+
+  function halfBar(val,mx,color){var w=mx>0?Math.max(10,val/mx*100):10;return'<div class="chalf-fill" style="width:'+w+'%;background:'+color+'"><span>'+val+'</span></div>'}
+
+  var xCv=p==='live'?xC(m,tC):tC;
+  var tips=p==='live'?cTips(xCv,m):[];
+
+  // ===== BUILD CORNER DETAIL (all inline) =====
   if(det){
-    const tabId='dtab-'+fid;
-    det.innerHTML=
-    // Sub-tabs
-    '<div class="det-tabs">'
-    +'<button class="det-tab on" onclick="showDetTab('+fid+',\'game\')">⛳ Jogo</button>'
-    +'<button class="det-tab" onclick="showDetTab('+fid+',\'h1\')">1ºT</button>'
-    +'<button class="det-tab" onclick="showDetTab('+fid+',\'h2\')">2ºT</button>'
-    +'<button class="det-tab" onclick="showDetTab('+fid+',\'race\')">🏁 Race</button>'
-    +'</div>'
+    var html='';
 
-    // === TAB: JOGO (full match stats) ===
-    +'<div id="dtp-'+fid+'-game">'
-    +row('Escanteios',hC,aC)+row('At. Perigosos',dH,dA)+row('Chutes',sH,sA)
-    +row('No Gol',sgH,sgA,'var(--green)','var(--orange)')
-    +row('Posse %',poH||50,poA||50,'var(--cyan)','var(--purple)')
-    +row('Faltas',foH,foA,'var(--orange)','var(--red)')
-    +row('Cartões',yH,yA,'var(--orange)','var(--red)')
-    +row('Impedimentos',oH,oA)
-    +(p==='live'?
-      '<div class="xcbar"><div class="xcbar-h"><span class="xcbar-l">xCorners</span><span class="xcbar-v">'+xCv.toFixed(1)+'</span></div>'
-      +'<div class="xcbar-t"><div class="xcbar-f" style="width:'+Math.min(100,xCv/14*100)+'%;background:'+(xCv>=10.5?'var(--green)':xCv>=8.5?'var(--blue)':'var(--orange)')+'"></div></div></div>'
-      +'<div class="tips">'+tips.map(function(t){return'<span class="tip '+t.lv+'">'+t.l+' '+t.c+'%</span>'}).join('')+'</div>'
-    :'<div style="text-align:center;font-size:11px;color:var(--t3);padding:8px 0">'+(p==='fin'?'Encerrado — '+tC+' escanteios':'')+'</div>')
-    +'</div>'
+    // --- STATS ---
+    html+=row('Escanteios',hC,aC)+row('At. Perigosos',dH,dA)+row('Chutes',sH,sA)
+      +row('No Gol',sgH,sgA,'var(--green)','var(--orange)')
+      +row('Posse %',poH||50,poA||50,'var(--cyan)','var(--purple)')
+      +row('Faltas',foH,foA,'var(--orange)','var(--red)')
+      +row('Cartões',yH,yA,'var(--orange)','var(--red)')
+      +row('Impedimentos',oH,oA);
 
-    // === TAB: 1º TEMPO ===
-    +'<div id="dtp-'+fid+'-h1" style="display:none">'
-    +'<div class="csplit"><div class="csplit-box">'
-    +'<div class="csplit-title" style="color:var(--blue)">'+hN+'</div>'
-    +'<div class="csplit-row"><div class="csplit-bar">'+cbar(h1H,maxC,'var(--blue)')+'</div></div>'
-    +'<div class="csplit-total" style="color:var(--blue)">'+h1H+'</div>'
-    +'</div><div class="csplit-box">'
-    +'<div class="csplit-title" style="color:var(--purple)">'+aN+'</div>'
-    +'<div class="csplit-row"><div class="csplit-bar">'+cbar(h1A,maxC,'var(--purple)')+'</div></div>'
-    +'<div class="csplit-total" style="color:var(--purple)">'+h1A+'</div>'
-    +'</div></div>'
-    +'<div style="text-align:center;padding:8px;background:var(--bg1);border-radius:8px;margin-bottom:8px">'
-    +'<span style="font-size:10px;color:var(--t3);text-transform:uppercase">Total 1º Tempo</span>'
-    +'<div style="font-family:JetBrains Mono;font-size:22px;font-weight:800;color:var(--cyan)">'+t1+'</div>'
-    +'</div>'
-    +(p==='live'&&m>0?'<div style="font-size:10px;color:var(--t3);text-align:center">Ritmo 1ºT: '+(m<=45?(t1/m*45).toFixed(1):t1)+' escanteios projetados</div>':'')
-    +(!evts?'<div style="font-size:9px;color:var(--orange);text-align:center;margin-top:4px">⚠️ Sem dados de eventos — valores estimados</div>':'')
-    +'</div>'
+    // --- xCorners ---
+    if(p==='live'){
+      html+='<div class="xcbar"><div class="xcbar-h"><span class="xcbar-l">xCorners</span><span class="xcbar-v">'+xCv.toFixed(1)+'</span></div>'
+        +'<div class="xcbar-t"><div class="xcbar-f" style="width:'+Math.min(100,xCv/14*100)+'%;background:'+(xCv>=10.5?'var(--green)':xCv>=8.5?'var(--blue)':'var(--orange)')+'"></div></div></div>'
+        +'<div class="tips">'+tips.map(function(t){return'<span class="tip '+t.lv+'">'+t.l+' '+t.c+'%</span>'}).join('')+'</div>';
+    }else if(p==='fin'){
+      html+='<div style="text-align:center;font-size:11px;color:var(--t3);padding:8px 0">Encerrado — '+tC+' escanteios</div>';
+    }
 
-    // === TAB: 2º TEMPO ===
-    +'<div id="dtp-'+fid+'-h2" style="display:none">'
-    +(m<=45&&!isFin(g.fixture.status)?
-      '<div style="text-align:center;padding:30px 10px;color:var(--t3)"><div style="font-size:24px;margin-bottom:8px">⏳</div><div style="font-size:12px">2º tempo ainda não começou</div>'
-      +(p==='live'?'<div style="font-size:10px;margin-top:6px;color:var(--cyan)">Projeção: '+(tC>0?((tC/m)*(90-45)).toFixed(1):'?')+' escanteios no 2ºT</div>':'')
-      +'</div>'
-    :
-      '<div class="csplit"><div class="csplit-box">'
-      +'<div class="csplit-title" style="color:var(--blue)">'+hN+'</div>'
-      +'<div class="csplit-row"><div class="csplit-bar">'+cbar(h2H,maxC,'var(--blue)')+'</div></div>'
-      +'<div class="csplit-total" style="color:var(--blue)">'+h2H+'</div>'
-      +'</div><div class="csplit-box">'
-      +'<div class="csplit-title" style="color:var(--purple)">'+aN+'</div>'
-      +'<div class="csplit-row"><div class="csplit-bar">'+cbar(h2A,maxC,'var(--purple)')+'</div></div>'
-      +'<div class="csplit-total" style="color:var(--purple)">'+h2A+'</div>'
-      +'</div></div>'
-      +'<div style="text-align:center;padding:8px;background:var(--bg1);border-radius:8px">'
-      +'<span style="font-size:10px;color:var(--t3);text-transform:uppercase">Total 2º Tempo</span>'
-      +'<div style="font-family:JetBrains Mono;font-size:22px;font-weight:800;color:var(--cyan)">'+t2+'</div></div>'
-    )
-    +'</div>'
+    // --- ESCANTEIOS POR TEMPO ---
+    html+='<div class="det-sec"><div class="det-sec-title"><span>⏱️</span> Escanteios por Tempo</div>';
+    html+='<div class="chalf">';
+    // 1T box
+    html+='<div class="chalf-box"><div class="chalf-label">1º Tempo</div>'
+      +'<div class="chalf-row"><div class="chalf-name" style="color:var(--blue)">C</div><div class="chalf-bar">'+halfBar(h1H,maxC,'var(--blue)')+'</div></div>'
+      +'<div class="chalf-row"><div class="chalf-name" style="color:var(--purple)">F</div><div class="chalf-bar">'+halfBar(h1A,maxC,'var(--purple)')+'</div></div>'
+      +'<div class="chalf-total" style="color:var(--cyan)">'+t1+'</div></div>';
+    // 2T box
+    if(m>45||isFin(g.fixture.status)){
+      html+='<div class="chalf-box"><div class="chalf-label">2º Tempo</div>'
+        +'<div class="chalf-row"><div class="chalf-name" style="color:var(--blue)">C</div><div class="chalf-bar">'+halfBar(h2H,maxC,'var(--blue)')+'</div></div>'
+        +'<div class="chalf-row"><div class="chalf-name" style="color:var(--purple)">F</div><div class="chalf-bar">'+halfBar(h2A,maxC,'var(--purple)')+'</div></div>'
+        +'<div class="chalf-total" style="color:var(--cyan)">'+t2+'</div></div>';
+    }else{
+      html+='<div class="chalf-box" style="display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:11px">⏳ 2ºT não iniciou</div>';
+    }
+    html+='</div></div>';
 
-    // === TAB: RACE ===
-    +'<div id="dtp-'+fid+'-race" style="display:none">'
-    +'<div class="race">'
-    +'<div class="race-title"><span>🏁</span> Corner Race — Quem chega primeiro?</div>'
-    +'<div class="race-names"><span style="color:var(--blue);font-weight:600">'+hN+'</span><span style="color:var(--purple);font-weight:600">'+aN+'</span></div>'
-    +[3,5,7,9].map(function(tgt){
-      var rc=raceProb(hC,aC,rateH,rateA,tgt);
-      var won=rc.done&&(rc.h===100||rc.a===100);
-      var icon=rc.done?(rc.h===100?'🔵':'🟣'):'';
-      return'<div class="race-row'+(won?' won':'')+'">'
-        +'<div class="race-target">Race '+tgt+'</div>'
-        +'<div class="race-vs">'
-          +'<div class="race-h" style="width:'+Math.max(3,rc.h)+'%"><span class="race-pct">'+(rc.h>8?rc.h+'%':'')+'</span></div>'
-          +'<div class="race-a" style="width:'+Math.max(3,rc.a)+'%"><span class="race-pct">'+(rc.a>8?rc.a+'%':'')+'</span></div>'
-        +'</div>'
-        +'<div class="race-check">'+icon+'</div>'
-        +'</div>';
-    }).join('')
-    +'</div>'
-    +'<div style="font-size:10px;color:var(--t3);text-align:center;margin-top:6px">'
-    +'Atual: <span style="color:var(--blue);font-weight:700">'+hC+'</span> × '
-    +'<span style="color:var(--purple);font-weight:700">'+aC+'</span>'
-    +' | Ritmo: <span style="font-family:JetBrains Mono;color:var(--cyan)">'+(rateH*10).toFixed(1)+'/10min × '+(rateA*10).toFixed(1)+'/10min</span>'
-    +'</div>'
-    +'</div>';
+    // --- CORNER RACE ---
+    if(p==='live'&&m>5){
+      html+='<div class="det-sec"><div class="det-sec-title"><span>🏁</span> Corner Race</div>';
+      html+='<div class="race-names"><span style="color:var(--blue);font-weight:600">'+hN+'</span><span style="color:var(--purple);font-weight:600">'+aN+'</span></div>';
+      [3,5,7,9].forEach(function(tgt){
+        var rc=raceProb(hC,aC,rateH,rateA,tgt);
+        var won=rc.done&&(rc.h===100||rc.a===100);
+        var icon=rc.done?(rc.h===100?'🔵':'🟣'):'';
+        html+='<div class="race-row'+(won?' won':'')+'">'
+          +'<div class="race-target">Race '+tgt+'</div>'
+          +'<div class="race-vs">'
+            +'<div class="race-h" style="width:'+Math.max(3,rc.h)+'%"><span class="race-pct">'+(rc.h>8?rc.h+'%':'')+'</span></div>'
+            +'<div class="race-a" style="width:'+Math.max(3,rc.a)+'%"><span class="race-pct">'+(rc.a>8?rc.a+'%':'')+'</span></div>'
+          +'</div>'
+          +'<div class="race-check">'+icon+'</div></div>';
+      });
+      html+='<div style="font-size:10px;color:var(--t3);text-align:center;margin-top:6px">'
+        +'Ritmo: <span style="font-family:JetBrains Mono;color:var(--blue);font-weight:700">'+(rateH*10).toFixed(1)+'/10min</span>'
+        +' × <span style="font-family:JetBrains Mono;color:var(--purple);font-weight:700">'+(rateA*10).toFixed(1)+'/10min</span></div>';
+      html+='</div>';
+    }
+
+    det.innerHTML=html;
   }
 
-  // HT ANALYSIS (Over 0.5 1T - unchanged logic)
+  // ===== HT ANALYSIS (Over 0.5 1T panel) =====
   if(htd&&p==='live'){
-    const appm=m>0?+(tD/m).toFixed(2):0;
-    let htH,htA,pSrc='est';const cH=tHist[norm(g.teams.home.name)],cA=tHist[norm(g.teams.away.name)];
-    if(cH!=null&&cA!=null){htH=cH;htA=cA;pSrc='api'}else{const dr=m>0?dH/m:0,da=m>0?dA/m:0;htH=Math.min(90,Math.round(48+dr*12+sH*1.8+sgH*3));htA=Math.min(90,Math.round(48+da*12+sA*1.8+sgA*3))}
-    let odd,oSrc='est',oLab='ESTIMADO';const ev=findOdd(g),ro=getOdd(ev);
+    var appm=m>0?+(tD/m).toFixed(2):0;
+    var htH,htA,pSrc='est';
+    var cH=tHist[norm(g.teams.home.name)],cA=tHist[norm(g.teams.away.name)];
+    if(cH!=null&&cA!=null){htH=cH;htA=cA;pSrc='api'}
+    else{var dr=m>0?dH/m:0,da=m>0?dA/m:0;htH=Math.min(90,Math.round(48+dr*12+sH*1.8+sgH*3));htA=Math.min(90,Math.round(48+da*12+sA*1.8+sgA*3))}
+
+    var odd,oSrc='est',oLab='ESTIMADO';
+    var ev=findOdd(g),ro=getOdd(ev);
     if(ro){odd=ro.odd;if(ro.is1){oSrc='api';oLab='REAL 1ºT'}else{oSrc='api';oLab='REAL (jogo)';odd=Math.max(1.01,+(odd*.7).toFixed(2))}}
-    else{const i=(tD/Math.max(m,1))+(tS/Math.max(m,1)*2)+(tSG/Math.max(m,1)*4);odd=+(1/Math.min(.92,.25+i*.06)).toFixed(2)}
-    const aOk=tD>m,pOk=htH>=60&&htA>=60,oOk=odd>=1.80,entry=pOk&&oOk&&aOk,watch=(pOk&&(oOk||aOk))||(oOk&&aOk);
-    const hasG=((g.score?.halftime?.home||0)+(g.score?.halftime?.away||0))>0,curG=(g.goals?.home||0)+(g.goals?.away||0);
-    const tn=g.teams.home.name+' vs '+g.teams.away.name;
-    if(entry){if(is2H(g.fixture.status)||isHTB(g.fixture.status))addSig(fid,tn,hasG?'green':'red');else if(is1H(g.fixture.status)&&curG>0)addSig(fid,tn,'green');else addSig(fid,tn,'pending')}
-    let res='';if(is1H(g.fixture.status)&&curG>0)res='<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--green-d);color:var(--green);font-size:11px;font-weight:600">⚽ GREEN!</div>';
+    else{var ii=(tD/Math.max(m,1))+(tS/Math.max(m,1)*2)+(tSG/Math.max(m,1)*4);odd=+(1/Math.min(.92,.25+ii*.06)).toFixed(2)}
+
+    var aOk=appm>1.0, pOk=htH>=60&&htA>=60, oOk=odd>=1.80;
+    var entry=pOk&&oOk&&aOk, watch=(pOk&&(oOk||aOk))||(oOk&&aOk);
+    var hasG=((g.score?.halftime?.home||0)+(g.score?.halftime?.away||0))>0;
+    var curG=(g.goals?.home||0)+(g.goals?.away||0);
+    var tn=g.teams.home.name+' vs '+g.teams.away.name;
+
+    if(entry){
+      if(is2H(g.fixture.status)||isHTB(g.fixture.status))addSig(fid,tn,hasG?'green':'red');
+      else if(is1H(g.fixture.status)&&curG>0)addSig(fid,tn,'green');
+      else addSig(fid,tn,'pending');
+    }
+
+    var res='';
+    if(is1H(g.fixture.status)&&curG>0)res='<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--green-d);color:var(--green);font-size:11px;font-weight:600">⚽ GREEN!</div>';
     else if((is2H(g.fixture.status)||isHTB(g.fixture.status))&&hasG)res='<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--green-d);color:var(--green);font-size:11px;font-weight:600">⚽ GREEN (2T)</div>';
     else if((is2H(g.fixture.status)||isHTB(g.fixture.status))&&!hasG)res='<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--red-d);color:var(--red);font-size:11px;font-weight:600">🚫 RED</div>';
-    htd.innerHTML='<div class="crit"><div class="crit-i '+(pOk?'ok':'no')+'"><div class="crit-icon">'+(pOk?'✅':'❌')+'</div><div class="crit-l">HT≥60%</div><div class="crit-v '+(pOk?'ok':'no')+'">'+Math.round(htH)+'%/'+Math.round(htA)+'%</div><div class="src-tag '+pSrc+'">'+(pSrc==='api'?'REAL':'ESTIMADO')+'</div></div>'
-    +'<div class="crit-i '+(oOk?'ok':'no')+'"><div class="crit-icon">'+(oOk?'✅':'❌')+'</div><div class="crit-l">Odd≥1.80</div><div class="crit-v '+(oOk?'ok':'no')+'">'+odd+'</div><div class="src-tag '+oSrc+'">'+oLab+'</div></div>'
-    +'<div class="crit-i '+(aOk?'ok':'no')+'"><div class="crit-icon">'+(aOk?'✅':'❌')+'</div><div class="crit-l">APPM>Min</div><div class="crit-v '+(aOk?'ok':'no')+'">'+tD+'>'+m+"'"+'</div><div class="src-tag api">AO VIVO</div></div></div>'
-    +'<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg1);border-radius:8px;font-size:11px;color:var(--t3)"><span>AT:'+dH+'×'+dA+' CH:'+tS+' SOG:'+tSG+'</span><span style="font-family:JetBrains Mono;font-weight:700;color:'+(appm>=1?'var(--green)':'var(--orange)')+'">APPM '+appm+'</span></div>'
-    +(entry?'<div style="text-align:center;padding:8px;border-radius:8px;margin-top:8px;background:var(--green-d);color:var(--green);font-size:12px;font-weight:700;border:1px solid rgba(0,232,123,.3)">✅ ENTRADA</div>':'')
-    +(!entry&&watch?'<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--orange-d);color:var(--orange);font-size:11px;font-weight:600">👀 MONITORAR</div>':'')+res;
+
+    htd.innerHTML='<div class="crit">'
+      +'<div class="crit-i '+(pOk?'ok':'no')+'"><div class="crit-icon">'+(pOk?'✅':'❌')+'</div><div class="crit-l">HT≥60%</div><div class="crit-v '+(pOk?'ok':'no')+'">'+Math.round(htH)+'%/'+Math.round(htA)+'%</div><div class="src-tag '+pSrc+'">'+(pSrc==='api'?'REAL':'ESTIMADO')+'</div></div>'
+      +'<div class="crit-i '+(oOk?'ok':'no')+'"><div class="crit-icon">'+(oOk?'✅':'❌')+'</div><div class="crit-l">Odd≥1.80</div><div class="crit-v '+(oOk?'ok':'no')+'">'+odd+'</div><div class="src-tag '+oSrc+'">'+oLab+'</div></div>'
+      +'<div class="crit-i '+(aOk?'ok':'no')+'"><div class="crit-icon">'+(aOk?'✅':'❌')+'</div><div class="crit-l">APPM</div><div class="crit-v '+(aOk?'ok':'no')+'">'+appm+'</div><div class="src-tag api">'+(aOk?'> 1.0':'< 1.0')+'</div></div>'
+      +'</div>'
+      +'<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg1);border-radius:8px;font-size:11px;color:var(--t3)">'
+      +'<span>At.Perig: '+dH+'(C) × '+dA+'(F) | Chutes: '+tS+' | Gol: '+tSG+'</span>'
+      +'<span style="font-family:JetBrains Mono;font-weight:700;color:'+(appm>=1?'var(--green)':'var(--orange)')+'">'+appm+'/min</span></div>'
+      +(entry?'<div style="text-align:center;padding:8px;border-radius:8px;margin-top:8px;background:var(--green-d);color:var(--green);font-size:12px;font-weight:700;border:1px solid rgba(0,232,123,.3)">✅ ENTRADA</div>':'')
+      +(!entry&&watch?'<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--orange-d);color:var(--orange);font-size:11px;font-weight:600">👀 MONITORAR</div>':'')
+      +res;
     renderHist();
   }
-}
-
-// Detail sub-tab switcher
-function showDetTab(fid,tab){
-  var tabs=document.querySelectorAll('#det-'+fid+' .det-tab');
-  tabs.forEach(function(t){t.classList.toggle('on',t.textContent.toLowerCase().includes(
-    tab==='game'?'jogo':tab==='h1'?'1':tab==='h2'?'2':'race'))});
-  ['game','h1','h2','race'].forEach(function(k){
-    var el=document.getElementById('dtp-'+fid+'-'+k);
-    if(el)el.style.display=k===tab?'block':'none';
-  });
 }
 
 // ==============================================================
