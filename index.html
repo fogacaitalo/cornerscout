@@ -247,7 +247,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
     <div class="strat-steps">
       <div class="sstep"><div class="snum">1</div><div class="stxt"><strong>HT ≥ 60%</strong><br>Ambos com gol no 1ºT em ≥60% dos jogos.</div></div>
       <div class="sstep"><div class="snum">2</div><div class="stxt"><strong>Odd ≥ 1.80</strong><br>Odd justa de Ov 0.5 1ºT.</div></div>
-      <div class="sstep"><div class="snum">3</div><div class="stxt"><strong>APPM > 1.0</strong><br>Ataques perigosos por minuto acima de 1.0 (jogo intenso).</div></div>
+      <div class="sstep"><div class="snum">3</div><div class="stxt"><strong>Intensidade ≥ 2.0/min</strong><br>Chutes + finalizações na área + escanteios por minuto.</div></div>
     </div>
   </div>
   <div class="algo-info"><strong>📐 v3.4:</strong> <code>Jogo</code> | <code>1ºT</code> | <code>2ºT</code> | <code>Race</code> | <code>Over 0.5 1ºT</code> | <code>Pré-Live</code>. 8 ligas.</div>
@@ -321,8 +321,24 @@ async function fetchHT(name,lg){const n=norm(name),ck='cs3h_'+n;const c=localSto
 // DEMO
 function demoGames(){return[['Arsenal','Chelsea',39,'Premier League'],['Flamengo','Palmeiras',71,'Brasileirão'],['Barcelona','Real Madrid',140,'La Liga'],['Bayern','Dortmund',78,'Bundesliga']].map(([h,a,lid,ln],i)=>({fixture:{id:9e3+i,status:[{short:'1H',elapsed:22},{short:'2H',elapsed:58},{short:'HT',elapsed:45},{short:'NS',elapsed:0}][i],date:new Date(Date.now()+3600000).toISOString()},league:{id:lid,name:ln,logo:''},teams:{home:{id:100+i*2,name:h,logo:''},away:{id:100+i*2+1,name:a,logo:''}},goals:{home:i%2,away:i>1?1:0},score:{halftime:{home:i%2,away:0}},_demo:true}))}
 
-// FETCH LIVE (1 call + filter)
-async function fetchLive(){isDemoMode=false;const lv=await apiFB('fixtures',{live:'all'});if(lv&&lv.length){const f=lv.filter(g=>ALLOWED.includes(g.league?.id));if(f.length)return f}const td=new Date().toISOString().split('T')[0],all=await apiFB('fixtures',{date:td});if(all&&all.length){const f=all.filter(g=>ALLOWED.includes(g.league?.id));if(f.length){const o={live:0,sched:1,fin:2,other:3};return f.sort((a,b)=>(o[ph(a.fixture?.status)]||3)-(o[ph(b.fixture?.status)]||3))}}isDemoMode=true;return demoGames()}
+// FETCH LIVE (merges live + today's scheduled for pre-live tab)
+async function fetchLive(){
+  isDemoMode=false;
+  var merged=new Map();
+  // 1. Try live games
+  var lv=await apiFB('fixtures',{live:'all'});
+  if(lv&&lv.length)lv.filter(function(g){return ALLOWED.includes(g.league?.id)}).forEach(function(g){merged.set(g.fixture.id,g)});
+  // 2. Always fetch today's date too (for scheduled/finished)
+  var td=new Date().toISOString().split('T')[0];
+  var all=await apiFB('fixtures',{date:td});
+  if(all&&all.length)all.filter(function(g){return ALLOWED.includes(g.league?.id)}).forEach(function(g){if(!merged.has(g.fixture.id))merged.set(g.fixture.id,g)});
+  var result=[...merged.values()];
+  if(result.length){
+    var o={live:0,sched:1,fin:2,other:3};
+    return result.sort(function(a,b){return(o[ph(a.fixture?.status)]||3)-(o[ph(b.fixture?.status)]||3)});
+  }
+  isDemoMode=true;return demoGames();
+}
 
 // FETCH STATS (on-demand, cached 60s)
 async function fetchStats(fid){if(gStats[fid]?._ts&&Date.now()-gStats[fid]._ts<60000)return gStats[fid];const d=await apiFB('fixtures/statistics',{fixture:fid});if(d){d._ts=Date.now();gStats[fid]=d}return d}
@@ -408,7 +424,7 @@ function renderAll(){
 // TOGGLE EXPAND
 async function toggle(fid){if(expanded.has(fid)){collapse(fid);return}expanded.add(fid);renderAll();
   const g=games.find(g=>g.fixture.id===fid);if(!g)return;
-  await Promise.all([fetchStats(fid),fetchEvents(fid)]);
+  await fetchStats(fid);
   for(const s of['home','away']){const n=norm(g.teams[s].name);if(tHist[n]===undefined)tHist[n]=await fetchHT(g.teams[s].name,g.league.id)}
   renderDet(fid)}
 function collapse(fid){expanded.delete(fid);renderAll()}
@@ -420,22 +436,32 @@ function renderDet(fid){
   if(!st){if(det)det.innerHTML='<div style="text-align:center;padding:10px;color:var(--t3);font-size:11px">Sem estatísticas.</div>';return}
   const hI=g.teams.home.id,aI=g.teams.away.id;
   const hC=getStat(st,hI,'Corner Kicks'),aC=getStat(st,aI,'Corner Kicks'),tC=hC+aC;
-  const dH=getStat(st,hI,'Dangerous Attacks'),dA=getStat(st,aI,'Dangerous Attacks'),tD=dH+dA;
+  // Intensidade = proxy de "ataques perigosos" usando stats que a API realmente retorna
   const sH=getStat(st,hI,'Total Shots'),sA=getStat(st,aI,'Total Shots'),tS=sH+sA;
   const sgH=getStat(st,hI,'Shots on Goal'),sgA=getStat(st,aI,'Shots on Goal'),tSG=sgH+sgA;
+  const siH=getStat(st,hI,'Shots insidebox'),siA=getStat(st,aI,'Shots insidebox');
+  // Intensidade composta: chutes + finalizações na área + escanteios
+  const intH=sH+siH*2+sgH*2+hC, intA=sA+siA*2+sgA*2+aC, tInt=intH+intA;
   const poH=getStat(st,hI,'Ball Possession'),poA=getStat(st,aI,'Ball Possession');
   const foH=getStat(st,hI,'Fouls'),foA=getStat(st,aI,'Fouls');
   const yH=getStat(st,hI,'Yellow Cards'),yA=getStat(st,aI,'Yellow Cards');
   const oH=getStat(st,hI,'Offsides'),oA=getStat(st,aI,'Offsides');
 
-  // Corner splits from events
-  const evts=gEvents[fid];
-  const cs=cornerSplits(evts,hI,aI);
+  // Corner splits: estimate by game phase (events API doesn't include corners)
   const in1H=is1H(g.fixture.status)||isHTB(g.fixture.status);
-  const h1H=evts?cs.h1H:(in1H?hC:Math.round(hC*0.48));
-  const h1A=evts?cs.h1A:(in1H?aC:Math.round(aC*0.48));
-  const h2H=evts?cs.h2H:(in1H?0:hC-h1H);
-  const h2A=evts?cs.h2A:(in1H?0:aC-h1A);
+  var h1H,h1A,h2H,h2A;
+  if(in1H){
+    // In 1H or HT: all current corners are from 1H
+    h1H=hC;h1A=aC;h2H=0;h2A=0;
+  }else if(is2H(g.fixture.status)){
+    // In 2H: estimate ~48% in 1H (typical split)
+    h1H=Math.round(hC*0.48);h1A=Math.round(aC*0.48);
+    h2H=hC-h1H;h2A=aC-h1A;
+  }else{
+    // Finished: 48/52 split
+    h1H=Math.round(hC*0.48);h1A=Math.round(aC*0.48);
+    h2H=hC-h1H;h2A=aC-h1A;
+  }
   const t1=h1H+h1A, t2=h2H+h2A;
   const rateH=m>0?hC/m:0, rateA=m>0?aC/m:0;
 
@@ -456,8 +482,9 @@ function renderDet(fid){
     var html='';
 
     // --- STATS ---
-    html+=row('Escanteios',hC,aC)+row('At. Perigosos',dH,dA)+row('Chutes',sH,sA)
+    html+=row('Escanteios',hC,aC)+row('Chutes',sH,sA)
       +row('No Gol',sgH,sgA,'var(--green)','var(--orange)')
+      +row('Dentro Área',siH,siA,'var(--green)','var(--orange)')
       +row('Posse %',poH||50,poA||50,'var(--cyan)','var(--purple)')
       +row('Faltas',foH,foA,'var(--orange)','var(--red)')
       +row('Cartões',yH,yA,'var(--orange)','var(--red)')
@@ -518,19 +545,20 @@ function renderDet(fid){
 
   // ===== HT ANALYSIS (Over 0.5 1T panel) =====
   if(htd&&p==='live'){
-    var appm=m>0?+(tD/m).toFixed(2):0;
+    // Intensidade por minuto (IPM) — substitui APPM que usava stat inexistente
+    var ipm=m>0?+(tInt/m).toFixed(1):0;
     var htH,htA,pSrc='est';
     var cH=tHist[norm(g.teams.home.name)],cA=tHist[norm(g.teams.away.name)];
     if(cH!=null&&cA!=null){htH=cH;htA=cA;pSrc='api'}
-    else{var dr=m>0?dH/m:0,da=m>0?dA/m:0;htH=Math.min(90,Math.round(48+dr*12+sH*1.8+sgH*3));htA=Math.min(90,Math.round(48+da*12+sA*1.8+sgA*3))}
+    else{var dr=m>0?intH/m:0,da=m>0?intA/m:0;htH=Math.min(90,Math.round(42+dr*4+sH*1.5+sgH*3));htA=Math.min(90,Math.round(42+da*4+sA*1.5+sgA*3))}
 
     var odd,oSrc='est',oLab='ESTIMADO';
     var ev=findOdd(g),ro=getOdd(ev);
     if(ro){odd=ro.odd;if(ro.is1){oSrc='api';oLab='REAL 1ºT'}else{oSrc='api';oLab='REAL (jogo)';odd=Math.max(1.01,+(odd*.7).toFixed(2))}}
-    else{var ii=(tD/Math.max(m,1))+(tS/Math.max(m,1)*2)+(tSG/Math.max(m,1)*4);odd=+(1/Math.min(.92,.25+ii*.06)).toFixed(2)}
+    else{var ii=(tS/Math.max(m,1))+(tSG/Math.max(m,1)*3)+(hC+aC)/Math.max(m,1);odd=+(1/Math.min(.92,.25+ii*.04)).toFixed(2)}
 
-    var aOk=appm>1.0, pOk=htH>=60&&htA>=60, oOk=odd>=1.80;
-    var entry=pOk&&oOk&&aOk, watch=(pOk&&(oOk||aOk))||(oOk&&aOk);
+    var iOk=ipm>=2.0, pOk=htH>=60&&htA>=60, oOk=odd>=1.80;
+    var entry=pOk&&oOk&&iOk, watch=(pOk&&(oOk||iOk))||(oOk&&iOk);
     var hasG=((g.score?.halftime?.home||0)+(g.score?.halftime?.away||0))>0;
     var curG=(g.goals?.home||0)+(g.goals?.away||0);
     var tn=g.teams.home.name+' vs '+g.teams.away.name;
@@ -549,11 +577,11 @@ function renderDet(fid){
     htd.innerHTML='<div class="crit">'
       +'<div class="crit-i '+(pOk?'ok':'no')+'"><div class="crit-icon">'+(pOk?'✅':'❌')+'</div><div class="crit-l">HT≥60%</div><div class="crit-v '+(pOk?'ok':'no')+'">'+Math.round(htH)+'%/'+Math.round(htA)+'%</div><div class="src-tag '+pSrc+'">'+(pSrc==='api'?'REAL':'ESTIMADO')+'</div></div>'
       +'<div class="crit-i '+(oOk?'ok':'no')+'"><div class="crit-icon">'+(oOk?'✅':'❌')+'</div><div class="crit-l">Odd≥1.80</div><div class="crit-v '+(oOk?'ok':'no')+'">'+odd+'</div><div class="src-tag '+oSrc+'">'+oLab+'</div></div>'
-      +'<div class="crit-i '+(aOk?'ok':'no')+'"><div class="crit-icon">'+(aOk?'✅':'❌')+'</div><div class="crit-l">APPM</div><div class="crit-v '+(aOk?'ok':'no')+'">'+appm+'</div><div class="src-tag api">'+(aOk?'> 1.0':'< 1.0')+'</div></div>'
+      +'<div class="crit-i '+(iOk?'ok':'no')+'"><div class="crit-icon">'+(iOk?'✅':'❌')+'</div><div class="crit-l">Intensidade</div><div class="crit-v '+(iOk?'ok':'no')+'">'+ipm+'/min</div><div class="src-tag api">'+(iOk?'ALTO':'BAIXO')+'</div></div>'
       +'</div>'
       +'<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg1);border-radius:8px;font-size:11px;color:var(--t3)">'
-      +'<span>At.Perig: '+dH+'(C) × '+dA+'(F) | Chutes: '+tS+' | Gol: '+tSG+'</span>'
-      +'<span style="font-family:JetBrains Mono;font-weight:700;color:'+(appm>=1?'var(--green)':'var(--orange)')+'">'+appm+'/min</span></div>'
+      +'<span>Chutes: '+sH+'×'+sA+' | No Gol: '+sgH+'×'+sgA+' | Área: '+siH+'×'+siA+'</span>'
+      +'<span style="font-family:JetBrains Mono;font-weight:700;color:'+(ipm>=2?'var(--green)':'var(--orange)')+'">'+ipm+'/min</span></div>'
       +(entry?'<div style="text-align:center;padding:8px;border-radius:8px;margin-top:8px;background:var(--green-d);color:var(--green);font-size:12px;font-weight:700;border:1px solid rgba(0,232,123,.3)">✅ ENTRADA</div>':'')
       +(!entry&&watch?'<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--orange-d);color:var(--orange);font-size:11px;font-weight:600">👀 MONITORAR</div>':'')
       +res;
@@ -824,7 +852,7 @@ function setF(f){cFilt=f;document.querySelectorAll('.fbtn').forEach(b=>b.classLi
 
 // UPDATE
 async function updateList(){try{games=await fetchLive();$('demoBanner').style.display=isDemoMode?'block':'none';renderAll();$('lastUpd').textContent=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}catch(e){isDemoMode=true;games=demoGames();renderAll()}}
-async function updateExp(){for(const f of expanded){const g=games.find(g=>g.fixture.id===f);if(!g||!isLive(g.fixture?.status))continue;await Promise.all([fetchStats(f),fetchEvents(f)]);renderDet(f)}}
+async function updateExp(){for(const f of expanded){const g=games.find(g=>g.fixture.id===f);if(!g||!isLive(g.fixture?.status))continue;await fetchStats(f);renderDet(f)}}
 
 async function startApp(){renderHist();await updateList();await fetchOdds();setInterval(updateList,3*60*1000);setInterval(updateExp,3*60*1000);setInterval(fetchOdds,10*60*1000)}
 </script>
