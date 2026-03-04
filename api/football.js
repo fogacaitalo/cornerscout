@@ -53,7 +53,7 @@ module.exports = async (req, res) => {
   const params = { ...req.query };
   delete params.endpoint;
   const qs = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-  const path = `/v3/${endpoint}${qs ? '?' + qs : ''}`;
+  const path = `/${endpoint}${qs ? '?' + qs : ''}`;
 
   try {
     const { json, headers } = await proxyRequest(
