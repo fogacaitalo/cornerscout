@@ -171,6 +171,10 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   <button class="tab on" data-p="corners" onclick="switchPanel('corners')">⛳ Escanteios</button>
   <button class="tab" data-p="overht" onclick="switchPanel('overht')">⚽ Over 0.5 HT</button>
 </div>
+<div id="demoBanner" style="display:none;background:linear-gradient(90deg,#f59e0b,#ef4444);color:#000;padding:14px 20px;border-radius:12px;margin-bottom:20px;font-weight:700;font-size:14px;text-align:center;letter-spacing:.3px">
+  ⚠️ MODO DEMO — A API não respondeu. Os jogos abaixo são <u>fictícios</u>. Verifique a API_FOOTBALL_KEY no Vercel.
+  <div id="demoErr" style="font-size:11px;font-weight:400;margin-top:6px;opacity:.8"></div>
+</div>
 
 <div class="panel on" id="panel-corners">
   <div class="insight"><div class="insight-icon">🤖</div><div class="insight-text" id="cInsight">Carregando...</div></div>
@@ -241,7 +245,7 @@ document.addEventListener('DOMContentLoaded',()=>{$('gateInput')?.addEventListen
 const REFRESH_LIVE=3*60*1000,REFRESH_ODDS=10*60*1000,ODDS_TTL=10*60*1000,HIST_TTL=24*60*60*1000;
 let cFilt='all',htFilt='all',cLeague='all',htLeague='all';
 let games=[],gStats={},oddsData={},teamHist={};
-let apiCalls=0,oddsCalls=0,prevEntries=new Set(),soundOn=false;
+let apiCalls=0,oddsCalls=0,prevEntries=new Set(),soundOn=false,isDemoMode=false;
 let sigHist=JSON.parse(localStorage.getItem('cs3_hist')||'[]');
 
 // =================================================================
@@ -271,8 +275,8 @@ function getStat(arr,tid,type){if(!arr)return 0;const ts=arr.find(s=>s.team?.id=
 // =================================================================
 // FETCH (safe JSON)
 // =================================================================
-async function safeFetch(url){try{const r=await fetch(url);if(!r.ok)return null;const ct=r.headers.get('content-type')||'';if(!ct.includes('json'))return null;const t=await r.text();try{return JSON.parse(t)}catch(e){return null}}catch(e){return null}}
-async function apiFootball(ep,p={}){const qs=new URLSearchParams({endpoint:ep,...p}).toString();const d=await safeFetch('/api/football?'+qs);apiCalls++;$('apiBadge').textContent='API: ~'+apiCalls;if(!d)return null;if(d.errors&&Object.keys(d.errors).length)return null;return d.response||[]}
+async function safeFetch(url){try{const r=await fetch(url);if(!r.ok){console.error('[CS] HTTP '+r.status+' for '+url);return null}const ct=r.headers.get('content-type')||'';if(!ct.includes('json')){console.error('[CS] Non-JSON response for '+url);return null}const t=await r.text();try{return JSON.parse(t)}catch(e){console.error('[CS] Parse fail:',t.slice(0,200));return null}}catch(e){console.error('[CS] Fetch error:',e.message);return null}}
+async function apiFootball(ep,p={}){const qs=new URLSearchParams({endpoint:ep,...p}).toString();const d=await safeFetch('/api/football?'+qs);apiCalls++;$('apiBadge').textContent='API: ~'+apiCalls;if(!d){console.warn('[CS] apiFootball('+ep+') returned null');$('apiBadge').className='badge warn';return null}if(d.errors&&Object.keys(d.errors).length){console.warn('[CS] API errors:',JSON.stringify(d.errors));$('apiBadge').className='badge warn';return null}$('apiBadge').className='badge ok';return d.response||[]}
 async function apiOdds(sport,markets='totals'){const d=await safeFetch('/api/odds?sport='+sport+'&markets='+markets+'&regions=eu,uk');oddsCalls++;$('oddsBadge').textContent='Odds: ~'+oddsCalls;$('oddsBadge').className=d?'badge ok':'badge warn';return d||[]}
 async function apiHistory(ep,p={}){const qs=new URLSearchParams({endpoint:ep,...p}).toString();return await safeFetch('/api/history?'+qs)}
 
@@ -323,20 +327,25 @@ function demoGames(){const lgs=[{id:39,name:'Premier League',logo:''},{id:71,nam
 // FETCH LIVE GAMES
 // =================================================================
 async function fetchLive(){
+  isDemoMode=false;
   // Step 1: try live-only endpoint
   const live = await apiFootball('fixtures',{live:'all'});
   if(live && live.length > 0){
-    console.log('[CS DEBUG] live endpoint returned',live.length,'games:',live.map(g=>g.teams.home.name+' vs '+g.teams.away.name+' ['+g.fixture.status?.short+'/'+g.fixture.status?.elapsed+"']").join(' | '));
+    console.log('[CS] LIVE:',live.length,'games');
     return live;
   }
-  // Step 2: fallback to today's schedule (includes FT, NS, etc.)
+  // Step 2: fallback to today's schedule
   const today = new Date().toISOString().split('T')[0];
   const all = await apiFootball('fixtures',{date:today});
-  if(!all || !all.length) return demoGames();
-  console.log('[CS DEBUG] date endpoint returned',all.length,'games:',all.map(g=>g.teams.home.name+' vs '+g.teams.away.name+' ['+g.fixture.status?.short+'/'+g.fixture.status?.elapsed+"']").join(' | '));
-  // Sort: live → scheduled → finished → cancelled
-  const order = {live:0,scheduled:1,finished:2,other:3};
-  return all.sort((a,b)=>(order[gamePhase(a.fixture?.status)]||3)-(order[gamePhase(b.fixture?.status)]||3));
+  if(all && all.length > 0){
+    console.log('[CS] TODAY:',all.length,'games — statuses:',all.map(g=>g.fixture.status?.short).join(','));
+    const order = {live:0,scheduled:1,finished:2,other:3};
+    return all.sort((a,b)=>(order[gamePhase(a.fixture?.status)]||3)-(order[gamePhase(b.fixture?.status)]||3));
+  }
+  // Step 3: API completely failed — demo mode
+  isDemoMode=true;
+  console.warn('[CS] API FAILED — falling back to demo data');
+  return demoGames();
 }
 async function fetchStats(fid){if(gStats[fid])return gStats[fid];const d=await apiFootball('fixtures/statistics',{fixture:fid});if(d)gStats[fid]=d;return d}
 
@@ -519,7 +528,34 @@ function setHF(f){htFilt=f;document.querySelectorAll('#htF .fbtn').forEach(b=>b.
 // =================================================================
 // UPDATE LOOPS
 // =================================================================
-async function updateLive(){try{games=await fetchLive();const lv=games.filter(g=>isLive(g.fixture?.status));for(const g of lv.slice(0,8)){if(!g.statistics&&!g._demo){const st=await fetchStats(g.fixture.id);if(st)g.statistics=st}}renderC(games);await renderHT(games);$('lastUpdate').textContent=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});showToast('Atualizado!')}catch(e){games=demoGames();renderC(games);renderHT(games);showToast('Modo demo','alert')}}
+async function updateLive(){
+  try{
+    games=await fetchLive();
+    // Show/hide demo banner
+    const banner=$('demoBanner');
+    if(isDemoMode){
+      banner.style.display='block';
+      // Run diagnostic
+      try{
+        const testR=await fetch('/api/football?endpoint=fixtures&live=all');
+        const testT=await testR.text();
+        $('demoErr').textContent='HTTP '+testR.status+' | Resposta: '+testT.slice(0,150);
+      }catch(de){$('demoErr').textContent='Fetch falhou: '+de.message}
+    }else{
+      banner.style.display='none';
+    }
+    const lv=games.filter(g=>isLive(g.fixture?.status));
+    for(const g of lv.slice(0,8)){if(!g.statistics&&!g._demo){const st=await fetchStats(g.fixture.id);if(st)g.statistics=st}}
+    renderC(games);await renderHT(games);
+    $('lastUpdate').textContent=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    if(!isDemoMode)showToast('Atualizado!');
+  }catch(e){
+    isDemoMode=true;
+    $('demoBanner').style.display='block';
+    $('demoErr').textContent='Erro: '+e.message;
+    games=demoGames();renderC(games);renderHT(games);
+  }
+}
 async function updateOdds(){try{await fetchAllOdds()}catch(e){}}
 async function updateHist(){try{await prefetchHist()}catch(e){}}
 function cleanSigs(){sigHist.forEach(s=>{if(s.status==='pending'&&Date.now()-s.t>3600000)s.status='red'});localStorage.setItem('cs3_hist',JSON.stringify(sigHist))}
