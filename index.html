@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CornerScout v3 — Escanteios & Over 0.5 HT</title>
+<title>CornerScout v3.1 — Escanteios & Over 0.5 1ºT</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -169,7 +169,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 </header>
 <div class="tabs">
   <button class="tab on" data-p="corners" onclick="switchPanel('corners')">⛳ Escanteios</button>
-  <button class="tab" data-p="overht" onclick="switchPanel('overht')">⚽ Over 0.5 HT</button>
+  <button class="tab" data-p="overht" onclick="switchPanel('overht')">⚽ Over 0.5 1ºT</button>
 </div>
 <div id="demoBanner" style="display:none;background:linear-gradient(90deg,#f59e0b,#ef4444);color:#000;padding:14px 20px;border-radius:12px;margin-bottom:20px;font-weight:700;font-size:14px;text-align:center;letter-spacing:.3px">
   ⚠️ MODO DEMO — A API não respondeu. Os jogos abaixo são <u>fictícios</u>. Verifique a API_FOOTBALL_KEY no Vercel.
@@ -196,14 +196,14 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 </div>
 
 <div class="panel" id="panel-overht">
-  <div class="strat"><div class="strat-t">🧠 Estratégia Over 0.5 HT</div>
+  <div class="strat"><div class="strat-t">🧠 Estratégia Over 0.5 Gols 1º Tempo</div>
     <div class="strat-steps">
-      <div class="sstep"><div class="snum">1</div><div class="stxt"><strong>Média HT ≥ 60%</strong><br>Histórico real via Football-Data.org.</div></div>
-      <div class="sstep"><div class="snum">2</div><div class="stxt"><strong>Odd ≥ 1.80</strong><br>Odd real via The Odds API.</div></div>
-      <div class="sstep"><div class="snum">3</div><div class="stxt"><strong>APPM &gt; Minuto</strong><br>Ataques perigosos ao vivo via API-Football.</div></div>
+      <div class="sstep"><div class="snum">1</div><div class="stxt"><strong>Média HT ≥ 60%</strong><br>% dos jogos com gol no 1ºT (Football-Data.org).</div></div>
+      <div class="sstep"><div class="snum">2</div><div class="stxt"><strong>Odd ≥ 1.80 (1ºT)</strong><br>Odd justa de Ov 0.5 1ºT real (The Odds API) — vale o risco na Bet365.</div></div>
+      <div class="sstep"><div class="snum">3</div><div class="stxt"><strong>APPM &gt; Minuto</strong><br>Ataques perigosos ao vivo acima do tempo (API-Football).</div></div>
     </div>
   </div>
-  <div class="algo-info"><strong>📐 v3:</strong> Critérios #1 e #2 com <code>dados reais</code> quando disponíveis. xCorners com <code>trust-factor Bayesiano</code> + cap 17.</div>
+  <div class="algo-info"><strong>📐 v3.1:</strong> Mercado: <code>Over 0.5 Gols 1º Tempo</code>. Odd via <code>totals_h1</code> quando disponível, fallback estimado. Ligas: PL, BL, LL, SA, L1, BR, UCL, UEL.</div>
   <div class="hist" id="histBar">
     <div class="hist-title">📊 Sinais:</div>
     <div class="hist-dots" id="histDots"><span style="font-size:11px;color:var(--t3)">Nenhum sinal ainda.</span></div>
@@ -225,7 +225,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   </div>
   <div class="grid" id="htGrid"><div class="loading"><div class="spinner"></div>Buscando jogos...</div></div>
 </div>
-<footer class="footer">CornerScout v3 — API-Football + The Odds API + Football-Data.org</footer>
+<footer class="footer">CornerScout v3.1 — 8 ligas | Over 0.5 1ºT | API-Football + The Odds API + Football-Data.org</footer>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -243,6 +243,11 @@ document.addEventListener('DOMContentLoaded',()=>{$('gateInput')?.addEventListen
 // CONFIG & STATE
 // =================================================================
 const REFRESH_LIVE=3*60*1000,REFRESH_ODDS=10*60*1000,ODDS_TTL=10*60*1000,HIST_TTL=24*60*60*1000;
+
+// ALLOWED LEAGUES — only monitor these (saves API quota)
+// Premier League(39), Bundesliga(78), La Liga(140), Serie A IT(135),
+// Ligue 1(61), Brasileirão(71), Champions League(2), Europa League(3)
+const ALLOWED_LEAGUES = [39, 78, 140, 135, 61, 71, 2, 3];
 let cFilt='all',htFilt='all',cLeague='all',htLeague='all';
 let games=[],gStats={},oddsData={},teamHist={};
 let apiCalls=0,oddsCalls=0,prevEntries=new Set(),soundOn=false,isDemoMode=false;
@@ -295,16 +300,63 @@ function addSig(fid,teams,st){const ex=sigHist.find(s=>s.id===fid);if(ex){if(st!
 function renderHist(){const dots=$('histDots'),stats=$('histStats'),last=sigHist.slice(0,20);if(!last.length){dots.innerHTML='<span style="font-size:11px;color:var(--t3)">Nenhum sinal.</span>';stats.innerHTML='';return}dots.innerHTML=last.map(s=>`<div class="hdot ${s.status==='green'?'g':s.status==='red'?'r':'p'}" data-tip="${s.teams}">${s.status==='green'?'✓':s.status==='red'?'✗':'?'}</div>`).join('');const g=sigHist.filter(s=>s.status==='green').length,r=sigHist.filter(s=>s.status==='red').length,p=g+r?Math.round(g/(g+r)*100):0;stats.innerHTML=`<div style="display:flex;gap:4px"><span style="color:var(--green);font-weight:700">${g}G</span><span style="color:var(--red);font-weight:700">${r}R</span><span style="color:var(--cyan);font-weight:600">${p}%</span></div>`}
 
 // =================================================================
-// ODDS: The Odds API
+// ODDS: The Odds API — Over 0.5 Gols 1º Tempo
 // =================================================================
-const LG_ODDS={39:'soccer_epl',140:'soccer_spain_la_liga',135:'soccer_italy_serie_a',78:'soccer_germany_bundesliga',61:'soccer_france_ligue_one',71:'soccer_brazil_campeonato',2:'soccer_uefa_champs_league',3:'soccer_uefa_europa_league',94:'soccer_portugal_primeira_liga',88:'soccer_netherlands_eredivisie',253:'soccer_usa_mls'};
-function normName(n){return n.toLowerCase().replace(/\b(fc|sc|ac|cf|ssc)\b/g,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim()}
-async function fetchAllOdds(){const c=localStorage.getItem('cs3_odds');if(c){try{const j=JSON.parse(c);if(Date.now()-j.ts<ODDS_TTL){oddsData=j.d;$('oddsBadge').textContent='Odds: cache';$('oddsBadge').className='badge ok';return}}catch(e){}}
-const liveIds=[...new Set(games.filter(g=>isLive(g.fixture?.status)).map(g=>g.league.id))];const keys=[...new Set(liveIds.map(id=>LG_ODDS[id]).filter(Boolean))];if(!keys.length){$('oddsBadge').textContent='Odds: n/a';$('oddsBadge').className='badge';return}
-const all={};for(const k of keys.slice(0,4)){const d=await apiOdds(k,'totals');if(Array.isArray(d))d.forEach(e=>{all[normName(e.home_team)+' v '+normName(e.away_team)]=e})}
-oddsData=all;localStorage.setItem('cs3_odds',JSON.stringify({ts:Date.now(),d:all}))}
-function findOdds(g){if(!Object.keys(oddsData).length)return null;const h=normName(g.teams.home.name),a=normName(g.teams.away.name);for(const[k,v]of Object.entries(oddsData)){const[kh,ka]=k.split(' v ');if(!kh||!ka)continue;if((kh.includes(h)||h.includes(kh))&&(ka.includes(a)||a.includes(ka)))return v;const hw=h.split(' ')[0],aw=a.split(' ')[0],khw=kh.split(' ')[0],kaw=ka.split(' ')[0];if(hw.length>3&&aw.length>3&&hw===khw&&aw===kaw)return v}return null}
-function getOdd(evt){if(!evt?.bookmakers?.length)return null;for(const b of evt.bookmakers)for(const m of b.markets||[])if(m.key==='totals'){const o=m.outcomes?.find(o=>o.name==='Over'&&o.point<=1.5);if(o)return{odd:o.price,src:'api'}}return null}
+const LG_ODDS={39:'soccer_epl',140:'soccer_spain_la_liga',135:'soccer_italy_serie_a',78:'soccer_germany_bundesliga',61:'soccer_france_ligue_one',71:'soccer_brazil_campeonato',2:'soccer_uefa_champs_league',3:'soccer_uefa_europa_league'};
+function normName(n){return n.toLowerCase().replace(/\b(fc|sc|ac|cf|ssc|rj|sp|mg|pr|rs|ce|ba)\b/g,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim()}
+async function fetchAllOdds(){
+  const c=localStorage.getItem('cs31_odds_h1');
+  if(c){try{const j=JSON.parse(c);if(Date.now()-j.ts<ODDS_TTL){oddsData=j.d;$('oddsBadge').textContent='Odds: cache';$('oddsBadge').className='badge ok';return}}catch(e){}}
+  // Get unique league keys from current games
+  const lgIds=[...new Set(games.map(g=>g.league?.id))];
+  const keys=[...new Set(lgIds.map(id=>LG_ODDS[id]).filter(Boolean))];
+  if(!keys.length){$('oddsBadge').textContent='Odds: n/a';$('oddsBadge').className='badge';return}
+  // Fetch first half totals for each league (max 4 to save quota)
+  const all={};
+  for(const k of keys.slice(0,4)){
+    // Try first_half market first, fallback to alternate
+    let d = await apiOdds(k,'totals_h1');
+    if(!Array.isArray(d)||!d.length) d = await apiOdds(k,'alternate_totals_h1');
+    if(!Array.isArray(d)||!d.length) d = await apiOdds(k,'totals'); // fallback to full game
+    if(Array.isArray(d)) d.forEach(e=>{
+      all[normName(e.home_team)+' v '+normName(e.away_team)]={...e,_isFirstHalf:!!(d[0]?.bookmakers?.[0]?.markets?.[0]?.key?.includes('h1'))}
+    });
+  }
+  oddsData=all;
+  localStorage.setItem('cs31_odds_h1',JSON.stringify({ts:Date.now(),d:all}));
+  console.log('[CS] Odds loaded:',Object.keys(all).length,'matches');
+}
+function findOdds(g){
+  if(!Object.keys(oddsData).length)return null;
+  const h=normName(g.teams.home.name),a=normName(g.teams.away.name);
+  for(const[k,v]of Object.entries(oddsData)){
+    const[kh,ka]=k.split(' v ');if(!kh||!ka)continue;
+    // Exact partial match
+    if((kh.includes(h)||h.includes(kh))&&(ka.includes(a)||a.includes(ka)))return v;
+    // First-word match for long names
+    const hw=h.split(' ')[0],aw=a.split(' ')[0],khw=kh.split(' ')[0],kaw=ka.split(' ')[0];
+    if(hw.length>3&&aw.length>3&&hw===khw&&aw===kaw)return v;
+  }
+  return null;
+}
+function getOdd(evt){
+  if(!evt?.bookmakers?.length)return null;
+  // Search all bookmakers for Over 0.5 in first half or totals market
+  for(const b of evt.bookmakers){
+    for(const m of b.markets||[]){
+      // Accept: totals_h1, alternate_totals_h1, or totals (fallback)
+      const isHT = m.key?.includes('h1') || m.key?.includes('first_half');
+      const o = m.outcomes?.find(o => o.name==='Over' && o.point <= 0.5);
+      if(o) return {odd:o.price, src:'api', isHT, book:b.title};
+      // Also check point=1.5 for regular totals as proxy
+      if(!isHT && m.key==='totals'){
+        const o15 = m.outcomes?.find(o => o.name==='Over' && o.point <= 1.5);
+        if(o15) return {odd:o15.price, src:'api', isHT:false, book:b.title};
+      }
+    }
+  }
+  return null;
+}
 
 // =================================================================
 // HISTORICAL: Football-Data.org
@@ -328,23 +380,27 @@ function demoGames(){const lgs=[{id:39,name:'Premier League',logo:''},{id:71,nam
 // =================================================================
 async function fetchLive(){
   isDemoMode=false;
-  // Step 1: try live-only endpoint
+  // Step 1: try live-only endpoint (1 call), filter client-side
   const live = await apiFootball('fixtures',{live:'all'});
   if(live && live.length > 0){
-    console.log('[CS] LIVE:',live.length,'games');
-    return live;
+    const filtered = live.filter(g => ALLOWED_LEAGUES.includes(g.league?.id));
+    console.log('[CS] LIVE:',live.length,'total,',filtered.length,'in allowed leagues');
+    if(filtered.length > 0) return filtered;
   }
-  // Step 2: fallback to today's schedule
+  // Step 2: fallback to today's schedule (1 call), filter client-side
   const today = new Date().toISOString().split('T')[0];
   const all = await apiFootball('fixtures',{date:today});
   if(all && all.length > 0){
-    console.log('[CS] TODAY:',all.length,'games — statuses:',all.map(g=>g.fixture.status?.short).join(','));
-    const order = {live:0,scheduled:1,finished:2,other:3};
-    return all.sort((a,b)=>(order[gamePhase(a.fixture?.status)]||3)-(order[gamePhase(b.fixture?.status)]||3));
+    const filtered = all.filter(g => ALLOWED_LEAGUES.includes(g.league?.id));
+    console.log('[CS] TODAY:',all.length,'total,',filtered.length,'in allowed leagues');
+    if(filtered.length > 0){
+      const order = {live:0,scheduled:1,finished:2,other:3};
+      return filtered.sort((a,b)=>(order[gamePhase(a.fixture?.status)]||3)-(order[gamePhase(b.fixture?.status)]||3));
+    }
   }
-  // Step 3: API completely failed — demo mode
+  // Step 3: API failed or no games in our leagues
   isDemoMode=true;
-  console.warn('[CS] API FAILED — falling back to demo data');
+  console.warn('[CS] No games in allowed leagues — demo mode');
   return demoGames();
 }
 async function fetchStats(fid){if(gStats[fid])return gStats[fid];const d=await apiFootball('fixtures/statistics',{fixture:fid});if(d)gStats[fid]=d;return d}
@@ -364,14 +420,46 @@ async function analyzeHT(g,st){
   const sH=getStat(st,hId,'Total Shots'),sA=getStat(st,aId,'Total Shots'),tS=sH+sA;
   const sogH=getStat(st,hId,'Shots on Goal'),sogA=getStat(st,aId,'Shots on Goal'),tSOG=sogH+sogA;
   const appm=min>0?+(tD/min).toFixed(2):0;
+
+  // Criterion 1: HT goal %
   let htH,htA,pSrc='est';
-  if(g._demo){htH=g._htH;htA=g._htA}else{const cH=teamHist[normName(g.teams.home.name)],cA=teamHist[normName(g.teams.away.name)];if(cH!=null&&cA!=null){htH=cH;htA=cA;pSrc='api'}else{const drH=min>0?dH/min:0,drA=min>0?dA/min:0;htH=Math.min(90,Math.round(48+drH*12+sH*1.8+sogH*3));htA=Math.min(90,Math.round(48+drA*12+sA*1.8+sogA*3))}}
-  let odd,oSrc='est';if(g._demo){odd=g._odd}else{const ev=findOdds(g),ro=getOdd(ev);if(ro){odd=ro.odd;oSrc='api'}else{const int=(tD/Math.max(min,1))+(tS/Math.max(min,1)*2)+(tSOG/Math.max(min,1)*4);odd=+(1/Math.min(.92,.25+int*.06)).toFixed(2)}}
-  const appmOk=tD>min,pctOk=htH>=60&&htA>=60,oddOk=odd>=1.80;
-  const all=pctOk&&oddOk&&appmOk,watch=(pctOk&&(oddOk||appmOk))||(oddOk&&appmOk);
+  if(g._demo){htH=g._htH;htA=g._htA}
+  else{
+    const cH=teamHist[normName(g.teams.home.name)],cA=teamHist[normName(g.teams.away.name)];
+    if(cH!=null&&cA!=null){htH=cH;htA=cA;pSrc='api'}
+    else{const drH=min>0?dH/min:0,drA=min>0?dA/min:0;
+      htH=Math.min(90,Math.round(48+drH*12+sH*1.8+sogH*3));
+      htA=Math.min(90,Math.round(48+drA*12+sA*1.8+sogA*3))}
+  }
+
+  // Criterion 2: Odd ≥ 1.80 — Over 0.5 Gols 1º Tempo
+  // Priority: real 1st half odd > real full game odd (proxy) > estimate
+  let odd,oSrc='est',oLabel='';
+  if(g._demo){odd=g._odd;oLabel='DEMO'}
+  else{
+    const ev=findOdds(g),ro=getOdd(ev);
+    if(ro){
+      odd=ro.odd;
+      if(ro.isHT){oSrc='api';oLabel='REAL 1ºT'}          // exact market
+      else{oSrc='api';oLabel='REAL (jogo)';odd=Math.max(1.01,+(odd*0.7).toFixed(2))} // proxy: full game odd * ~0.7 approximates HT
+    }else{
+      // Estimate based on live intensity
+      const int=(tD/Math.max(min,1))+(tS/Math.max(min,1)*2)+(tSOG/Math.max(min,1)*4);
+      odd=+(1/Math.min(.92,.25+int*.06)).toFixed(2);
+      oLabel='ESTIMADO';
+    }
+  }
+
+  const appmOk=tD>min, pctOk=htH>=60&&htA>=60, oddOk=odd>=1.80;
+  const all=pctOk&&oddOk&&appmOk, watch=(pctOk&&(oddOk||appmOk))||(oddOk&&appmOk);
   const first=is1H(g.fixture.status),htGH=g.score?.halftime?.home||0,htGA=g.score?.halftime?.away||0,hasHTG=htGH+htGA>0,curG=(g.goals?.home||0)+(g.goals?.away||0);
-  let conf=0;if(pctOk)conf+=33;if(oddOk)conf+=33;if(appmOk)conf+=34;if(tSOG>=3)conf=Math.min(99,conf+5);
-  return{min,dH,dA,tD,appm,sH,sA,tS,sogH,sogA,tSOG,htH:Math.round(htH),htA:Math.round(htA),pSrc,odd,oSrc,pctOk,oddOk,appmOk,all,watch,first,hasHTG,curG,conf,status:all?'entry':watch?'watch':'skip'}
+
+  let conf=0;
+  if(pctOk)conf+=30;if(oddOk)conf+=35;if(appmOk)conf+=30;
+  if(oSrc==='api')conf=Math.min(99,conf+5); // bonus for real odds
+  if(tSOG>=3)conf=Math.min(99,conf+3);
+
+  return{min,dH,dA,tD,appm,sH,sA,tS,sogH,sogA,tSOG,htH:Math.round(htH),htA:Math.round(htA),pSrc,odd,oSrc,oLabel,pctOk,oddOk,appmOk,all,watch,first,hasHTG,curG,conf,status:all?'entry':watch?'watch':'skip'}
 }
 
 // =================================================================
@@ -419,8 +507,6 @@ function renderC(gs){
   el.innerHTML=flt.map(({g,hC,aC,tot,xC,tips,hot,min,phase})=>{
     // Build minute badge per status
     let badge='';
-    const rawStatus = g.fixture.status?.short || '??';
-    const rawElapsed = g.fixture.status?.elapsed ?? '-';
     if(phase==='live'){
       const mc=g.fixture.status?.short==='HT'?'ht':'';
       badge=`<div class="mmin ${mc}">${g.fixture.status?.short==='HT'?'INT':min+"'"}</div>`;
@@ -430,8 +516,6 @@ function renderC(gs){
       const d=new Date(g.fixture.date);
       badge=`<div class="mmin ns">${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</div>`;
     }
-    // DEBUG badge — remove after fixing
-    badge += `<div style="font-size:9px;font-family:monospace;color:var(--orange);background:var(--orange-d);padding:1px 5px;border-radius:3px;margin-left:4px">${rawStatus}/${rawElapsed} → ${phase}</div>`;
 
     const isDim = phase==='finished' || phase==='other';
 
@@ -505,7 +589,7 @@ async function renderHT(gs){
       <div class="tcol">${g.teams.away.logo?`<img class="tlogo" src="${g.teams.away.logo}">`:'<div class="tph"></div>'}<div class="tname">${g.teams.away.name}</div></div></div>
       <div class="crit">
         <div class="crit-i ${a.pctOk?'ok':'no'}"><div class="crit-icon">${a.pctOk?'✅':'❌'}</div><div class="crit-l">Média HT≥60%</div><div class="crit-v ${a.pctOk?'ok':'no'}">${a.htH}%/${a.htA}%</div><div class="src-tag ${a.pSrc}">${a.pSrc==='api'?'REAL':'ESTIMADO'}</div></div>
-        <div class="crit-i ${a.oddOk?'ok':'no'}"><div class="crit-icon">${a.oddOk?'✅':'❌'}</div><div class="crit-l">Odd ≥ 1.80</div><div class="crit-v ${a.oddOk?'ok':'no'}">${a.odd}</div><div class="src-tag ${a.oSrc}">${a.oSrc==='api'?'REAL':'ESTIMADO'}</div></div>
+        <div class="crit-i ${a.oddOk?'ok':'no'}"><div class="crit-icon">${a.oddOk?'✅':'❌'}</div><div class="crit-l">Odd ≥ 1.80 (Ov0.5 1ºT)</div><div class="crit-v ${a.oddOk?'ok':'no'}">${a.odd}</div><div class="src-tag ${a.oSrc}">${a.oLabel}</div></div>
         <div class="crit-i ${a.appmOk?'ok':'no'}"><div class="crit-icon">${a.appmOk?'✅':'❌'}</div><div class="crit-l">APPM>Min</div><div class="crit-v ${a.appmOk?'ok':'no'}">${a.tD}>${a.min}'</div><div class="src-tag api">AO VIVO</div></div>
       </div>
       <div class="dbar"><div class="dbar-h"><span class="dbar-l">Ataques: ${a.dH}(C)×${a.dA}(F) | Chutes: ${a.tS} | SOG: ${a.tSOG}</span>
