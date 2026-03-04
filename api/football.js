@@ -134,12 +134,11 @@ module.exports = async (req, res) => {
       );
       updateKeyState(key, headers);
 
-      // Rate limited? Try next key
-      if (status === 429 || (json.errors && Object.keys(json.errors).length > 0 &&
-          JSON.stringify(json.errors).toLowerCase().includes('limit'))) {
+      // Any API error? (suspended, rate limit, invalid token, etc.) Try next key
+      if (status === 429 || (json.errors && Object.keys(json.errors).length > 0)) {
         const st = keyState.get(key);
         if (st) { st.exhausted = true; st.remaining = 0; }
-        lastError = 'Key ' + (attempt + 1) + ' exhausted';
+        lastError = JSON.stringify(json.errors);
         continue;
       }
 
