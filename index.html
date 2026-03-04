@@ -158,10 +158,50 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   .tabs{width:100%}.tab{flex:1;text-align:center;padding:10px 10px;font-size:13px}
   .hist-stats{margin-left:0;width:100%}
 }
+
+/* Password Gate */
+.gate{position:fixed;inset:0;z-index:9999;background:var(--bg0);display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse at 50% 30%,rgba(0,232,123,.06) 0%,var(--bg0) 70%)}
+.gate.hidden{display:none}
+.gate-box{background:var(--bg2);border:1px solid var(--brd);border-radius:16px;padding:40px 36px;
+  max-width:380px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.gate-logo{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:24px}
+.gate-logo .logo-icon{width:48px;height:48px;font-size:20px;border-radius:13px}
+.gate-logo .logo-text{font-size:26px}
+.gate-sub{font-size:13px;color:var(--t2);margin-bottom:28px;line-height:1.5}
+.gate-input{width:100%;padding:14px 16px;border-radius:10px;border:1px solid var(--brd);background:var(--bg1);
+  color:var(--t1);font-size:15px;font-family:'Outfit',sans-serif;outline:none;transition:border .2s;
+  text-align:center;letter-spacing:1px}
+.gate-input:focus{border-color:var(--green)}
+.gate-input.shake{animation:shake .4s;border-color:var(--red)}
+@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+.gate-btn{width:100%;padding:14px;border-radius:10px;border:none;background:var(--green);color:var(--bg0);
+  font-size:15px;font-weight:700;font-family:'Outfit',sans-serif;cursor:pointer;margin-top:14px;
+  transition:all .2s;letter-spacing:.3px}
+.gate-btn:hover{box-shadow:0 4px 20px rgba(0,232,123,.3);transform:translateY(-1px)}
+.gate-err{font-size:12px;color:var(--red);margin-top:10px;min-height:18px}
+.gate-hint{font-size:11px;color:var(--t3);margin-top:20px}
+.app.locked{display:none}
 </style>
 </head>
 <body>
-<div class="app">
+
+<!-- PASSWORD GATE -->
+<div class="gate" id="gate">
+  <div class="gate-box">
+    <div class="gate-logo">
+      <div class="logo-icon" style="width:48px;height:48px;background:linear-gradient(135deg,var(--green),#00c066);border-radius:13px;display:grid;place-items:center;font-size:20px;font-weight:900;color:var(--bg0)">CS</div>
+      <div style="font-size:26px;font-weight:700;letter-spacing:-.5px">Corner<span style="color:var(--green)">Scout</span></div>
+    </div>
+    <div class="gate-sub">Acesso restrito — fase de testes.<br>Digite a senha para entrar.</div>
+    <input class="gate-input" id="gateInput" type="password" placeholder="Senha de acesso" autocomplete="off" autofocus>
+    <button class="gate-btn" id="gateBtn" onclick="tryLogin()">Entrar</button>
+    <div class="gate-err" id="gateErr"></div>
+    <div class="gate-hint">Peça a senha ao administrador.</div>
+  </div>
+</div>
+
+<div class="app locked" id="mainApp">
 <header class="header">
   <div class="logo"><div class="logo-icon">CS</div><div class="logo-text">Corner<span>Scout</span></div></div>
   <div class="hdr-r">
@@ -787,20 +827,60 @@ async function updateHistorical(){
 function cleanSignals(){signalHist.forEach(s=>{if(s.status==='pending'&&Date.now()-s.t>3600000)s.status='red'});localStorage.setItem('cs3_hist',JSON.stringify(signalHist))}
 
 // =================================================================
-// INIT
+// PASSWORD GATE
 // =================================================================
-(async function init(){
-  renderHist();
-  await updateLive();           // 1. Live games first
-  await updateOdds();           // 2. Then real odds
-  await updateHistorical();     // 3. Then historical data
-  await renderHT(games);        // 4. Re-render with enriched data
+// >>> MUDE A SENHA AQUI <<<
+const ACCESS_PASSWORD = 'cornerscout2025';
 
-  setInterval(updateLive, REFRESH_LIVE);      // Every 3 min
-  setInterval(updateOdds, REFRESH_ODDS);      // Every 10 min
-  setInterval(updateHistorical, REFRESH_ODDS); // Every 10 min
-  setInterval(cleanSignals, 5*60*1000);       // Every 5 min
-})();
+function tryLogin() {
+  const input = $('gateInput');
+  const val = input.value.trim();
+  if (val === ACCESS_PASSWORD) {
+    // Authenticated
+    sessionStorage.setItem('cs3_auth', 'true');
+    unlockApp();
+  } else {
+    input.classList.add('shake');
+    $('gateErr').textContent = 'Senha incorreta. Tente novamente.';
+    setTimeout(() => input.classList.remove('shake'), 400);
+    input.value = '';
+    input.focus();
+  }
+}
+
+function unlockApp() {
+  $('gate').classList.add('hidden');
+  $('mainApp').classList.remove('locked');
+  startApp();
+}
+
+// Allow Enter key to submit
+document.addEventListener('DOMContentLoaded', () => {
+  const input = $('gateInput');
+  if (input) {
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
+  }
+  // Check if already authenticated this session
+  if (sessionStorage.getItem('cs3_auth') === 'true') {
+    unlockApp();
+  }
+});
+
+// =================================================================
+// INIT (only runs after authentication)
+// =================================================================
+async function startApp(){
+  renderHist();
+  await updateLive();
+  await updateOdds();
+  await updateHistorical();
+  await renderHT(games);
+
+  setInterval(updateLive, REFRESH_LIVE);
+  setInterval(updateOdds, REFRESH_ODDS);
+  setInterval(updateHistorical, REFRESH_ODDS);
+  setInterval(cleanSignals, 5*60*1000);
+}
 </script>
 </body>
 </html>
