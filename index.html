@@ -32,7 +32,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .live-dot{width:7px;height:7px;background:var(--green);border-radius:50%;animation:pulse 1.4s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .badge{font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--bg3);padding:3px 10px;border-radius:6px;border:1px solid var(--brd);color:var(--t2)}
-.badge.ok{border-color:var(--green);color:var(--green)}.badge.warn{border-color:var(--orange);color:var(--orange)}
+.badge.ok{border-color:var(--green);color:var(--green)}.badge.warn{border-color:var(--orange);color:var(--orange)}.badge.err{border-color:var(--red);color:var(--red)}
 .snd-btn{width:34px;height:34px;border-radius:8px;border:1px solid var(--brd);background:var(--bg2);cursor:pointer;font-size:16px;display:grid;place-items:center;transition:all .2s;color:var(--t2)}
 .snd-btn:hover{border-color:var(--green)}.snd-btn.on{border-color:var(--green);color:var(--green);background:var(--green-d)}
 .tabs{display:flex;gap:3px;margin-bottom:20px;background:var(--bg1);border-radius:var(--r);padding:3px;width:fit-content;border:1px solid var(--brd)}
@@ -298,7 +298,10 @@ function norm(n){return n.toLowerCase().replace(/\b(fc|sc|ac|cf|ssc|rj|sp|mg)\b/
 
 // FETCH
 async function safeFetch(u){try{const r=await fetch(u);if(!r.ok)return null;const c=r.headers.get('content-type')||'';if(!c.includes('json'))return null;return JSON.parse(await r.text())}catch(e){return null}}
-async function apiFB(ep,p={}){const q=new URLSearchParams({endpoint:ep,...p}).toString();const d=await safeFetch('/api/football?'+q);apiN++;$('apiBadge').textContent='API: '+apiN;$('sReqs').textContent=apiN;if(!d){$('apiBadge').className='badge warn';return null}if(d.errors&&Object.keys(d.errors).length){$('apiBadge').className='badge warn';return null}$('apiBadge').className='badge ok';return d.response||[]}
+async function apiFB(ep,p={}){const q=new URLSearchParams({endpoint:ep,...p}).toString();const r=await fetch('/api/football?'+q).catch(()=>null);apiN++;if(!r||!r.ok){$('apiBadge').className='badge warn';$('apiBadge').textContent='API: '+apiN;$('sReqs').textContent=apiN;return null}
+  const rem=r.headers.get('x-ratelimit-requests-remaining'),lim=r.headers.get('x-ratelimit-requests-limit'),kn=r.headers.get('x-ratelimit-keys-count');
+  if(rem!=null){const rn=parseInt(rem),ln=parseInt(lim)||100;$('apiBadge').textContent='API: '+apiN+' ('+rn+'/'+ln+')';if(kn&&parseInt(kn)>1)$('apiBadge').textContent='API: '+apiN+' ('+rn+'/'+ln+' ×'+kn+')';$('apiBadge').className=rn>20?'badge ok':rn>5?'badge warn':'badge err'}else{$('apiBadge').textContent='API: '+apiN;$('apiBadge').className='badge ok'}
+  $('sReqs').textContent=apiN;const ct=r.headers.get('content-type')||'';if(!ct.includes('json'))return null;try{const d=JSON.parse(await r.text());if(d.errors&&Object.keys(d.errors).length)return null;return d.response||[]}catch(e){return null}}
 async function apiOdds(s,m='totals_h1'){const d=await safeFetch('/api/odds?sport='+s+'&markets='+m+'&regions=eu,uk');oddsN++;$('oddsBadge').textContent='Odds: '+oddsN;$('oddsBadge').className=d?'badge ok':'badge warn';return d||[]}
 async function apiHist(ep,p={}){return await safeFetch('/api/history?'+new URLSearchParams({endpoint:ep,...p}).toString())}
 
