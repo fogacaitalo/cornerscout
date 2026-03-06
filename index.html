@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CornerScout v3.4 — Análise Completa</title>
+<title>CornerScout v3.5 — Análise Completa</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -247,10 +247,10 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
     <div class="strat-steps">
       <div class="sstep"><div class="snum">1</div><div class="stxt"><strong>HT ≥ 60%</strong><br>Ambos com gol no 1ºT em ≥60% dos jogos.</div></div>
       <div class="sstep"><div class="snum">2</div><div class="stxt"><strong>Odd ≥ 1.80</strong><br>Odd justa de Ov 0.5 1ºT.</div></div>
-      <div class="sstep"><div class="snum">3</div><div class="stxt"><strong>Intensidade ≥ 2.0/min</strong><br>Chutes + finalizações na área + escanteios por minuto.</div></div>
+      <div class="sstep"><div class="snum">3</div><div class="stxt"><strong>OPI ≥ 1.5/min</strong><br>Pressão ofensiva: chutes, finalizações na área, bloqueios, defesas do goleiro, escanteios.</div></div>
     </div>
   </div>
-  <div class="algo-info"><strong>📐 v3.4:</strong> <code>Jogo</code> | <code>1ºT</code> | <code>2ºT</code> | <code>Race</code> | <code>Over 0.5 1ºT</code> | <code>Pré-Live</code>. 8 ligas.</div>
+  <div class="algo-info"><strong>📐 v3.5:</strong> <code>Jogo</code> | <code>1ºT</code> | <code>2ºT</code> | <code>Race</code> | <code>Over 0.5 1ºT</code> | <code>Pré-Live</code>. 8 ligas.</div>
   <div class="hist"><div class="hist-title">📊 Sinais:</div><div class="hist-dots" id="histDots"></div><div class="hist-stats" id="histStats"></div></div>
   <div class="insight"><div class="insight-icon">🤖</div><div class="insight-text" id="htInsight">Clique em um jogo ao vivo para analisar.</div></div>
   <div class="grid" id="htGrid"><div class="loading"><div class="spinner"></div>Buscando jogos...</div></div>
@@ -266,7 +266,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
   <div id="preGrid" class="grid"><div class="pl-loading"><div class="spinner"></div>Clique na aba para carregar análise...</div></div>
 </div>
 
-<footer class="footer">CornerScout v3.4 — Jogo | 1ºT | 2ºT | Race | Over 0.5 1ºT | Pré-Live</footer>
+<footer class="footer">CornerScout v3.5 — Jogo | 1ºT | 2ºT | Race | Over 0.5 1ºT | Pré-Live</footer>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -277,12 +277,14 @@ function unlock(){$('gate').classList.add('hidden');$('mainApp').classList.remov
 document.addEventListener('DOMContentLoaded',()=>{$('gateInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')tryLogin()});if(sessionStorage.getItem('cs3a')==='1')unlock()});
 
 // CONFIG
-// PL,BL,LL,SA,L1,BR,UCL,UEL + Paulistão,Carioca,Mineiro,Gaúcho
-const ALLOWED=[39,78,140,135,61,71,2,3,475,476,477,478];
+// PL,BL,LL,SA,L1,BR,UCL,UEL + Copa do Brasil + Paulistão,Carioca,Mineiro,Gaúcho
+const ALLOWED=[39,78,140,135,61,71,2,3,73,475,476,477,478];
 const ODDS_TTL=10*60*1000,HIST_TTL=24*60*60*1000;
 let games=[],gStats={},gEvents={},oddsData={},tHist={},expanded=new Set();
 let apiN=0,oddsN=0,isDemoMode=false,soundOn=false,cFilt='all',cLg='all';
 let sigHist=JSON.parse(localStorage.getItem('cs3_hist')||'[]');
+// Corner snapshot: grava corners no HT pra split exato no 2T
+let cornerSnap={}; // fid -> {h:N, a:N, min:N, src:'ht'|'est'}
 
 // STATUS
 function isLive(s){return['1H','2H','HT','ET','P','BT','LIVE'].includes(s?.short)}
@@ -294,6 +296,50 @@ function is2H(s){return s?.short==='2H'}
 function isHTB(s){return s?.short==='HT'}
 function minN(s){return s?.elapsed||0}
 function getStat(a,t,k){if(!a)return 0;const s=a.find(x=>x.team?.id===t);return parseInt(s?.statistics?.find(x=>x.type===k)?.value)||0}
+function getStatF(a,t,k){if(!a)return 0;const s=a.find(x=>x.team?.id===t);return parseFloat(s?.statistics?.find(x=>x.type===k)?.value)||0}
+
+// OPI = Offensive Pressure Index (per team)
+// Uses all available stats with calibrated weights
+function calcOPI(st,tId,oppId){
+  const sg=getStat(st,tId,'Shots on Goal');        // 4pts — direct goal threat
+  const si=getStat(st,tId,'Shots insidebox');       // 3pts — danger zone
+  const bs=getStat(st,tId,'Blocked Shots');         // 2pts — attack penetrated defense
+  const gkOpp=getStat(st,oppId,'Goalkeeper Saves'); // 3pts — opponent keeper had to save
+  const ck=getStat(st,tId,'Corner Kicks');           // 1.5pts — pressure indicator
+  const ts=getStat(st,tId,'Total Shots');            // 1pt — any attack
+  const so=getStat(st,tId,'Shots outsidebox');       // 0.5pt — speculative
+  const xg=getStatF(st,tId,'expected_goals');        // 10pts if available (xG)
+  const po=getStat(st,tId,'Ball Possession');
+  let raw=sg*4+si*3+bs*2+gkOpp*3+ck*1.5+ts+so*0.5;
+  if(xg>0)raw+=xg*10; // xG is powerful when available
+  // Possession bonus: dominating team creates more
+  if(po>60)raw*=1.15;else if(po>55)raw*=1.07;
+  return raw;
+}
+
+// OPI interpretation: per minute, combined both teams
+// <1.0 = low, 1.0-1.5 = normal, 1.5-2.0 = active, 2.0+ = high pressure
+function opiLabel(v){return v>=2.5?'MUITO ALTO':v>=2.0?'ALTO':v>=1.5?'ATIVO':v>=1.0?'NORMAL':'BAIXO'}
+function opiColor(v){return v>=2.0?'var(--green)':v>=1.5?'var(--cyan)':v>=1.0?'var(--orange)':'var(--red)'}
+
+// Corner Snap: snapshot corners when game reaches HT
+function updateCornerSnap(fid,g,st){
+  if(!st||!g)return;
+  const hI=g.teams.home.id,aI=g.teams.away.id;
+  const hC=getStat(st,hI,'Corner Kicks'),aC=getStat(st,aI,'Corner Kicks');
+  const status=g.fixture?.status?.short;
+  // If at HT and we haven't snapped yet, record exact 1H corners
+  if(status==='HT'&&!cornerSnap[fid]){
+    cornerSnap[fid]={h:hC,a:aC,min:45,src:'ht'};
+  }
+  // If in 2H and no snap exists, estimate from last known
+  if(status==='2H'&&!cornerSnap[fid]){
+    // Best estimate: corners at start of 2H ≈ what we have minus recent growth
+    // If first poll in 2H, current corners include some 2H already
+    // Use 48% estimate as fallback
+    cornerSnap[fid]={h:Math.round(hC*0.48),a:Math.round(aC*0.48),min:45,src:'est'};
+  }
+}
 function norm(n){return n.toLowerCase().replace(/\b(fc|sc|ac|cf|ssc|rj|sp|mg)\b/g,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim()}
 
 // FETCH
@@ -344,7 +390,7 @@ async function fetchLive(){
 }
 
 // FETCH STATS (on-demand, cached 60s)
-async function fetchStats(fid){if(gStats[fid]?._ts&&Date.now()-gStats[fid]._ts<60000)return gStats[fid];const d=await apiFB('fixtures/statistics',{fixture:fid});if(d){d._ts=Date.now();gStats[fid]=d}return d}
+async function fetchStats(fid){if(gStats[fid]?._ts&&Date.now()-gStats[fid]._ts<60000)return gStats[fid];const d=await apiFB('fixtures/statistics',{fixture:fid});if(d){d._ts=Date.now();gStats[fid]=d;const g=games.find(g=>g.fixture.id===fid);updateCornerSnap(fid,g,d)}return d}
 async function fetchEvents(fid){if(gEvents[fid]?._ts&&Date.now()-gEvents[fid]._ts<60000)return gEvents[fid];const d=await apiFB('fixtures/events',{fixture:fid});if(d){const r={all:d,corners:[],_ts:Date.now()};d.forEach(e=>{if(e.detail==='Corner'||e.type==='Corner'||(e.comments||'').toLowerCase().includes('corner'))r.corners.push({team:e.team?.id,min:e.time?.elapsed||0,extra:e.time?.extra||0,side:null})});gEvents[fid]=r}return gEvents[fid]}
 
 // Parse corner events into 1H/2H splits
@@ -393,7 +439,7 @@ function renderAll(){
   let nLive=0;const flt=[];
   games.forEach(g=>{const p=ph(g.fixture.status);if(p==='live')nLive++;if(cLg!=='all'&&g.league.id!==cLg)return;if(cFilt!=='all'&&p!==cFilt)return;flt.push({g,p})});
   $('sLive').textContent=nLive;$('sTotal').textContent=games.length;$('sExp').textContent=expanded.size;$('liveCount').textContent=nLive+' ao vivo';
-  $('cInsight').innerHTML='<strong>🤖 v3.4:</strong> '+nLive+' ao vivo, '+games.length+' total. <em>Clique em um jogo para ver stats, escanteios por tempo e Race.</em>';
+  $('cInsight').innerHTML='<strong>🤖 v3.5:</strong> '+nLive+' ao vivo, '+games.length+' total. <em>Clique em um jogo para ver stats, escanteios por tempo e Race.</em>';
   if(!flt.length){el.innerHTML='<div class="empty">⛳ Nenhum jogo.</div>';htEl.innerHTML='<div class="empty">⚽ Nenhum jogo ao vivo.</div>';return}
   const ord={live:0,sched:1,fin:2,other:3};flt.sort((a,b)=>(ord[a.p]||3)-(ord[b.p]||3));
 
@@ -439,31 +485,35 @@ function renderDet(fid){
   if(!st){if(det)det.innerHTML='<div style="text-align:center;padding:10px;color:var(--t3);font-size:11px">Sem estatísticas.</div>';return}
   const hI=g.teams.home.id,aI=g.teams.away.id;
   const hC=getStat(st,hI,'Corner Kicks'),aC=getStat(st,aI,'Corner Kicks'),tC=hC+aC;
-  // Intensidade = proxy de "ataques perigosos" usando stats que a API realmente retorna
+  // All available offensive stats
   const sH=getStat(st,hI,'Total Shots'),sA=getStat(st,aI,'Total Shots'),tS=sH+sA;
   const sgH=getStat(st,hI,'Shots on Goal'),sgA=getStat(st,aI,'Shots on Goal'),tSG=sgH+sgA;
   const siH=getStat(st,hI,'Shots insidebox'),siA=getStat(st,aI,'Shots insidebox');
-  // Intensidade composta: chutes + finalizações na área + escanteios
-  const intH=sH+siH*2+sgH*2+hC, intA=sA+siA*2+sgA*2+aC, tInt=intH+intA;
+  const bsH=getStat(st,hI,'Blocked Shots'),bsA=getStat(st,aI,'Blocked Shots');
+  const gsH=getStat(st,hI,'Goalkeeper Saves'),gsA=getStat(st,aI,'Goalkeeper Saves');
   const poH=getStat(st,hI,'Ball Possession'),poA=getStat(st,aI,'Ball Possession');
   const foH=getStat(st,hI,'Fouls'),foA=getStat(st,aI,'Fouls');
   const yH=getStat(st,hI,'Yellow Cards'),yA=getStat(st,aI,'Yellow Cards');
   const oH=getStat(st,hI,'Offsides'),oA=getStat(st,aI,'Offsides');
+  // OPI (Offensive Pressure Index)
+  const opiH=calcOPI(st,hI,aI),opiA=calcOPI(st,aI,hI),opiT=opiH+opiA;
+  const opiPM=m>0?+(opiT/m).toFixed(1):0;
 
-  // Corner splits: estimate by game phase (events API doesn't include corners)
+  // Corner splits: exact via snapshot, or by game phase
   const in1H=is1H(g.fixture.status)||isHTB(g.fixture.status);
-  var h1H,h1A,h2H,h2A;
+  var h1H,h1A,h2H,h2A,cSrc='phase';
   if(in1H){
     // In 1H or HT: all current corners are from 1H
-    h1H=hC;h1A=aC;h2H=0;h2A=0;
-  }else if(is2H(g.fixture.status)){
-    // In 2H: estimate ~48% in 1H (typical split)
-    h1H=Math.round(hC*0.48);h1A=Math.round(aC*0.48);
-    h2H=hC-h1H;h2A=aC-h1A;
+    h1H=hC;h1A=aC;h2H=0;h2A=0;cSrc='exact';
+  }else if(cornerSnap[fid]){
+    // 2H with snapshot: exact split!
+    h1H=cornerSnap[fid].h;h1A=cornerSnap[fid].a;
+    h2H=Math.max(0,hC-h1H);h2A=Math.max(0,aC-h1A);
+    cSrc=cornerSnap[fid].src==='ht'?'exact':'est';
   }else{
-    // Finished: 48/52 split
+    // No snapshot: estimate
     h1H=Math.round(hC*0.48);h1A=Math.round(aC*0.48);
-    h2H=hC-h1H;h2A=aC-h1A;
+    h2H=hC-h1H;h2A=aC-h1A;cSrc='est';
   }
   const t1=h1H+h1A, t2=h2H+h2A;
   const rateH=m>0?hC/m:0, rateA=m>0?aC/m:0;
@@ -488,10 +538,23 @@ function renderDet(fid){
     html+=row('Escanteios',hC,aC)+row('Chutes',sH,sA)
       +row('No Gol',sgH,sgA,'var(--green)','var(--orange)')
       +row('Dentro Área',siH,siA,'var(--green)','var(--orange)')
+      +row('Bloqueados',bsH,bsA,'var(--cyan)','var(--purple)')
+      +row('Defesas GK',gsH,gsA,'var(--cyan)','var(--purple)')
       +row('Posse %',poH||50,poA||50,'var(--cyan)','var(--purple)')
       +row('Faltas',foH,foA,'var(--orange)','var(--red)')
       +row('Cartões',yH,yA,'var(--orange)','var(--red)')
       +row('Impedimentos',oH,oA);
+
+    // --- OPI (Offensive Pressure Index) ---
+    if(p==='live'&&m>3){
+      var opiW=Math.min(100,opiPM/3.5*100);
+      html+='<div class="xcbar" style="margin-top:8px"><div class="xcbar-h"><span class="xcbar-l">OPI <span style="font-size:9px;opacity:.6">(pressão ofensiva)</span></span><span class="xcbar-v" style="color:'+opiColor(opiPM)+'">'+opiPM+'/min</span></div>'
+        +'<div class="xcbar-t"><div class="xcbar-f" style="width:'+opiW+'%;background:'+opiColor(opiPM)+'"></div></div>'
+        +'<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--t3);margin-top:3px">'
+        +'<span style="color:var(--blue)">Casa: '+Math.round(opiH)+'</span>'
+        +'<span style="font-weight:700;color:'+opiColor(opiPM)+'">'+opiLabel(opiPM)+'</span>'
+        +'<span style="color:var(--purple)">Fora: '+Math.round(opiA)+'</span></div></div>';
+    }
 
     // --- xCorners ---
     if(p==='live'){
@@ -503,7 +566,10 @@ function renderDet(fid){
     }
 
     // --- ESCANTEIOS POR TEMPO ---
-    html+='<div class="det-sec"><div class="det-sec-title"><span>⏱️</span> Escanteios por Tempo</div>';
+    html+='<div class="det-sec"><div class="det-sec-title"><span>⏱️</span> Escanteios por Tempo'
+      +(cSrc==='exact'?'<span style="font-size:8px;margin-left:6px;padding:1px 5px;background:var(--green-d);color:var(--green);border-radius:4px">EXATO</span>'
+        :cSrc==='est'?'<span style="font-size:8px;margin-left:6px;padding:1px 5px;background:var(--orange-d);color:var(--orange);border-radius:4px">ESTIMADO</span>':'')
+      +'</div>';
     html+='<div class="chalf">';
     // 1T box
     html+='<div class="chalf-box"><div class="chalf-label">1º Tempo</div>'
@@ -548,19 +614,27 @@ function renderDet(fid){
 
   // ===== HT ANALYSIS (Over 0.5 1T panel) =====
   if(htd&&p==='live'){
-    // Intensidade por minuto (IPM) — substitui APPM que usava stat inexistente
-    var ipm=m>0?+(tInt/m).toFixed(1):0;
+    // OPI per minute (replaces old IPM)
     var htH,htA,pSrc='est';
     var cH=tHist[norm(g.teams.home.name)],cA=tHist[norm(g.teams.away.name)];
     if(cH!=null&&cA!=null){htH=cH;htA=cA;pSrc='api'}
-    else{var dr=m>0?intH/m:0,da=m>0?intA/m:0;htH=Math.min(90,Math.round(42+dr*4+sH*1.5+sgH*3));htA=Math.min(90,Math.round(42+da*4+sA*1.5+sgA*3))}
+    else{
+      // Estimate from OPI: higher OPI = more likely to score
+      var oH_r=m>0?opiH/m:0,oA_r=m>0?opiA/m:0;
+      htH=Math.min(92,Math.round(40+oH_r*12+sgH*4+siH*3));
+      htA=Math.min(92,Math.round(40+oA_r*12+sgA*4+siA*3));
+    }
 
     var odd,oSrc='est',oLab='ESTIMADO';
     var ev=findOdd(g),ro=getOdd(ev);
     if(ro){odd=ro.odd;if(ro.is1){oSrc='api';oLab='REAL 1ºT'}else{oSrc='api';oLab='REAL (jogo)';odd=Math.max(1.01,+(odd*.7).toFixed(2))}}
-    else{var ii=(tS/Math.max(m,1))+(tSG/Math.max(m,1)*3)+(hC+aC)/Math.max(m,1);odd=+(1/Math.min(.92,.25+ii*.04)).toFixed(2)}
+    else{
+      // Estimate odd from OPI: higher pressure = lower odd (more likely to score)
+      var ii=m>0?(opiT/m):0;
+      odd=+(1/Math.min(.94,.20+ii*.035)).toFixed(2);
+    }
 
-    var iOk=ipm>=2.0, pOk=htH>=60&&htA>=60, oOk=odd>=1.80;
+    var iOk=opiPM>=1.5, pOk=htH>=60&&htA>=60, oOk=odd>=1.80;
     var entry=pOk&&oOk&&iOk, watch=(pOk&&(oOk||iOk))||(oOk&&iOk);
     var hasG=((g.score?.halftime?.home||0)+(g.score?.halftime?.away||0))>0;
     var curG=(g.goals?.home||0)+(g.goals?.away||0);
@@ -580,11 +654,11 @@ function renderDet(fid){
     htd.innerHTML='<div class="crit">'
       +'<div class="crit-i '+(pOk?'ok':'no')+'"><div class="crit-icon">'+(pOk?'✅':'❌')+'</div><div class="crit-l">HT≥60%</div><div class="crit-v '+(pOk?'ok':'no')+'">'+Math.round(htH)+'%/'+Math.round(htA)+'%</div><div class="src-tag '+pSrc+'">'+(pSrc==='api'?'REAL':'ESTIMADO')+'</div></div>'
       +'<div class="crit-i '+(oOk?'ok':'no')+'"><div class="crit-icon">'+(oOk?'✅':'❌')+'</div><div class="crit-l">Odd≥1.80</div><div class="crit-v '+(oOk?'ok':'no')+'">'+odd+'</div><div class="src-tag '+oSrc+'">'+oLab+'</div></div>'
-      +'<div class="crit-i '+(iOk?'ok':'no')+'"><div class="crit-icon">'+(iOk?'✅':'❌')+'</div><div class="crit-l">Intensidade</div><div class="crit-v '+(iOk?'ok':'no')+'">'+ipm+'/min</div><div class="src-tag api">'+(iOk?'ALTO':'BAIXO')+'</div></div>'
+      +'<div class="crit-i '+(iOk?'ok':'no')+'"><div class="crit-icon">'+(iOk?'✅':'❌')+'</div><div class="crit-l">OPI</div><div class="crit-v '+(iOk?'ok':'no')+'" style="color:'+opiColor(opiPM)+'">'+opiPM+'/min</div><div class="src-tag api">'+opiLabel(opiPM)+'</div></div>'
       +'</div>'
       +'<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg1);border-radius:8px;font-size:11px;color:var(--t3)">'
-      +'<span>Chutes: '+sH+'×'+sA+' | No Gol: '+sgH+'×'+sgA+' | Área: '+siH+'×'+siA+'</span>'
-      +'<span style="font-family:JetBrains Mono;font-weight:700;color:'+(ipm>=2?'var(--green)':'var(--orange)')+'">'+ipm+'/min</span></div>'
+      +'<span>Gol: '+sgH+'×'+sgA+' | Área: '+siH+'×'+siA+' | Bloq: '+bsH+'×'+bsA+' | Def: '+gsH+'×'+gsA+'</span>'
+      +'<span style="font-family:JetBrains Mono;font-weight:700;color:'+opiColor(opiPM)+'">'+opiPM+'</span></div>'
       +(entry?'<div style="text-align:center;padding:8px;border-radius:8px;margin-top:8px;background:var(--green-d);color:var(--green);font-size:12px;font-weight:700;border:1px solid rgba(0,232,123,.3)">✅ ENTRADA</div>':'')
       +(!entry&&watch?'<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--orange-d);color:var(--orange);font-size:11px;font-weight:600">👀 MONITORAR</div>':'')
       +res;
