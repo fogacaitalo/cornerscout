@@ -220,6 +220,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 <div class="tabs">
   <button class="tab on" data-p="corners" onclick="switchTab('corners')">⛳ Escanteios</button>
   <button class="tab" data-p="ht" onclick="switchTab('ht')">⚽ Over 0.5 1ºT</button>
+  <button class="tab" data-p="info" onclick="switchTab('info')">📋 Info</button>
   <button class="tab" data-p="pre" onclick="switchTab('pre');loadPreLive()">📊 Pré-Live</button>
 </div>
 <div id="demoBanner" style="display:none;background:linear-gradient(90deg,#f59e0b,#ef4444);color:#000;padding:14px 20px;border-radius:12px;margin-bottom:20px;font-weight:700;font-size:14px;text-align:center">⚠️ MODO DEMO<div id="demoErr" style="font-size:11px;font-weight:400;margin-top:4px;opacity:.8"></div></div>
@@ -250,10 +251,15 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
       <div class="sstep"><div class="snum">3</div><div class="stxt"><strong>OPI ≥ 1.5/min</strong><br>Pressão ofensiva: chutes, finalizações na área, bloqueios, defesas do goleiro, escanteios.</div></div>
     </div>
   </div>
-  <div class="algo-info"><strong>📐 v3.5:</strong> <code>Jogo</code> | <code>1ºT</code> | <code>2ºT</code> | <code>Race</code> | <code>Over 0.5 1ºT</code> | <code>Pré-Live</code>. 8 ligas.</div>
+  <div class="algo-info"><strong>📐 v3.5:</strong> <code>Escanteios</code> (xCorners + Race) | <code>Over 0.5 1ºT</code> (OPI) | <code>Info</code> (stats + entradas) | <code>Pré-Live</code>. 13 ligas.</div>
   <div class="hist"><div class="hist-title">📊 Sinais:</div><div class="hist-dots" id="histDots"></div><div class="hist-stats" id="histStats"></div></div>
   <div class="insight"><div class="insight-icon">🤖</div><div class="insight-text" id="htInsight">Clique em um jogo ao vivo para analisar.</div></div>
   <div class="grid" id="htGrid"><div class="loading"><div class="spinner"></div>Buscando jogos...</div></div>
+</div>
+
+<div class="panel" id="p-info">
+  <div class="insight"><div class="insight-icon">📋</div><div class="insight-text" id="infoInsight"><strong>Info Completa:</strong> Stats detalhadas, OPI (pressão ofensiva) e outras oportunidades de entrada.</div></div>
+  <div class="grid" id="infoGrid"><div class="empty">📋 Clique em um jogo para ver análise completa.</div></div>
 </div>
 
 <div class="panel" id="p-pre">
@@ -266,7 +272,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
   <div id="preGrid" class="grid"><div class="pl-loading"><div class="spinner"></div>Clique na aba para carregar análise...</div></div>
 </div>
 
-<footer class="footer">CornerScout v3.5 — Jogo | 1ºT | 2ºT | Race | Over 0.5 1ºT | Pré-Live</footer>
+<footer class="footer">CornerScout v3.5 — Escanteios | Over 0.5 1ºT | Info | Pré-Live</footer>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -433,14 +439,14 @@ function setCL(id){cLg=id==='all'?'all':id;renderAll()}
 // RENDER ALL
 // =====================================================
 function renderAll(){
-  const el=$('cGrid'),htEl=$('htGrid'),lgs=extractLgs(games);
+  const el=$('cGrid'),htEl=$('htGrid'),infoEl=$('infoGrid'),lgs=extractLgs(games);
   // League filter
   $('cLF').innerHTML='<button class="lbtn '+(cLg==='all'?'on':'')+'" onclick="setCL(\'all\')">Todas ('+games.length+')</button>'+lgs.map(l=>'<button class="lbtn '+(cLg==l.id?'on':'')+'" onclick="setCL('+l.id+')">'+(l.logo?'<img src="'+l.logo+'">':'')+l.name+' ('+l.n+')</button>').join('');
   let nLive=0;const flt=[];
   games.forEach(g=>{const p=ph(g.fixture.status);if(p==='live')nLive++;if(cLg!=='all'&&g.league.id!==cLg)return;if(cFilt!=='all'&&p!==cFilt)return;flt.push({g,p})});
   $('sLive').textContent=nLive;$('sTotal').textContent=games.length;$('sExp').textContent=expanded.size;$('liveCount').textContent=nLive+' ao vivo';
   $('cInsight').innerHTML='<strong>🤖 v3.5:</strong> '+nLive+' ao vivo, '+games.length+' total. <em>Clique em um jogo para ver stats, escanteios por tempo e Race.</em>';
-  if(!flt.length){el.innerHTML='<div class="empty">⛳ Nenhum jogo.</div>';htEl.innerHTML='<div class="empty">⚽ Nenhum jogo ao vivo.</div>';return}
+  if(!flt.length){el.innerHTML='<div class="empty">⛳ Nenhum jogo.</div>';htEl.innerHTML='<div class="empty">⚽ Nenhum jogo ao vivo.</div>';infoEl.innerHTML='<div class="empty">📋 Nenhum jogo.</div>';return}
   const ord={live:0,sched:1,fin:2,other:3};flt.sort((a,b)=>(ord[a.p]||3)-(ord[b.p]||3));
 
   // CORNERS GRID
@@ -466,6 +472,19 @@ function renderAll(){
     +'<div class="tcol">'+(g.teams.away.logo?'<img class="tlogo" src="'+g.teams.away.logo+'">':'<div class="tph"></div>')+'<div class="tname">'+g.teams.away.name+'</div></div></div>'
     +'<div id="htd-'+f+'">'+(hasSt?'':'<div class="expand-hint">🔍 Clique para análise</div>')+'</div></div></div>'}).join('');
 
+  // INFO GRID — all games (live + sched + fin)
+  infoEl.innerHTML=flt.map(({g,p})=>{const f=g.fixture.id,ex=expanded.has(f),m=minN(g.fixture.status);
+    let bd='';if(p==='live'){const mc=isHTB(g.fixture.status)?'ht':'';bd='<div class="mmin '+mc+'">'+(isHTB(g.fixture.status)?'INT':m+"'")+'</div>'}else if(p==='fin')bd='<div class="mmin ft">FIM</div>';else if(p==='sched'){bd='<div class="mmin ns">'+new Date(g.fixture.date).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'</div>'}
+    return'<div class="gcard'+(ex?' expanded':'')+(p==='fin'&&!ex?' dim':'')+'" onclick="toggle('+f+')">'
+    +'<div class="gcard-h"><div class="lg-info">'+(g.league.logo?'<img class="lg-logo" src="'+g.league.logo+'">':'')+'<span class="lg-name">'+g.league.name+'</span></div>'+bd+'</div>'
+    +'<div class="gcard-b"><div class="teams"><div class="tcol">'+(g.teams.home.logo?'<img class="tlogo" src="'+g.teams.home.logo+'">':'<div class="tph"></div>')+'<div class="tname">'+g.teams.home.name+'</div></div>'
+    +'<div class="scol">'+(p==='sched'?'vs':((g.goals.home??0)+' - '+(g.goals.away??0)))+'<span class="hts">'+(p==='sched'?'Pré-jogo':'HT: '+(g.score?.halftime?.home??'-')+' - '+(g.score?.halftime?.away??'-'))+'</span></div>'
+    +'<div class="tcol">'+(g.teams.away.logo?'<img class="tlogo" src="'+g.teams.away.logo+'">':'<div class="tph"></div>')+'<div class="tname">'+g.teams.away.name+'</div></div></div>'
+    +(!ex?'<div class="expand-hint">📋 Toque para info completa</div>':'')
+    +'<div class="detail" id="inf-'+f+'">'+(ex&&!gStats[f]?'<div class="detail-loading"><div class="mini-spin"></div>Carregando...</div>':'')+'</div>'
+    +(ex?'<button class="collapse-btn" onclick="event.stopPropagation();collapse('+f+')">▲ Fechar</button>':'')
+    +'</div></div>'}).join('');
+
   // Render details for already-expanded games
   expanded.forEach(f=>renderDet(f));renderHist();
 }
@@ -478,14 +497,17 @@ async function toggle(fid){if(expanded.has(fid)){collapse(fid);return}expanded.a
   renderDet(fid)}
 function collapse(fid){expanded.delete(fid);renderAll()}
 
-// RENDER DETAIL (all inline, no sub-tabs)
+// RENDER DETAIL — 3 panels: det (corners), htd (Over 0.5), inf (info)
 function renderDet(fid){
   const g=games.find(g=>g.fixture.id===fid);if(!g)return;
-  const st=gStats[fid],det=$('det-'+fid),htd=$('htd-'+fid),p=ph(g.fixture.status),m=minN(g.fixture.status);
-  if(!st){if(det)det.innerHTML='<div style="text-align:center;padding:10px;color:var(--t3);font-size:11px">Sem estatísticas.</div>';return}
+  const st=gStats[fid],det=$('det-'+fid),htd=$('htd-'+fid),inf=$('inf-'+fid),p=ph(g.fixture.status),m=minN(g.fixture.status);
+  if(!st){
+    if(det)det.innerHTML='<div style="text-align:center;padding:10px;color:var(--t3);font-size:11px">Sem estatísticas.</div>';
+    if(inf)inf.innerHTML='<div style="text-align:center;padding:10px;color:var(--t3);font-size:11px">Sem estatísticas.</div>';
+    return;
+  }
   const hI=g.teams.home.id,aI=g.teams.away.id;
   const hC=getStat(st,hI,'Corner Kicks'),aC=getStat(st,aI,'Corner Kicks'),tC=hC+aC;
-  // All available offensive stats
   const sH=getStat(st,hI,'Total Shots'),sA=getStat(st,aI,'Total Shots'),tS=sH+sA;
   const sgH=getStat(st,hI,'Shots on Goal'),sgA=getStat(st,aI,'Shots on Goal'),tSG=sgH+sgA;
   const siH=getStat(st,hI,'Shots insidebox'),siA=getStat(st,aI,'Shots insidebox');
@@ -495,68 +517,34 @@ function renderDet(fid){
   const foH=getStat(st,hI,'Fouls'),foA=getStat(st,aI,'Fouls');
   const yH=getStat(st,hI,'Yellow Cards'),yA=getStat(st,aI,'Yellow Cards');
   const oH=getStat(st,hI,'Offsides'),oA=getStat(st,aI,'Offsides');
-  // OPI (Offensive Pressure Index)
   const opiH=calcOPI(st,hI,aI),opiA=calcOPI(st,aI,hI),opiT=opiH+opiA;
   const opiPM=m>0?+(opiT/m).toFixed(1):0;
 
-  // Corner splits: exact via snapshot, or by game phase
+  // Corner splits
   const in1H=is1H(g.fixture.status)||isHTB(g.fixture.status);
   var h1H,h1A,h2H,h2A,cSrc='phase';
-  if(in1H){
-    // In 1H or HT: all current corners are from 1H
-    h1H=hC;h1A=aC;h2H=0;h2A=0;cSrc='exact';
-  }else if(cornerSnap[fid]){
-    // 2H with snapshot: exact split!
-    h1H=cornerSnap[fid].h;h1A=cornerSnap[fid].a;
-    h2H=Math.max(0,hC-h1H);h2A=Math.max(0,aC-h1A);
-    cSrc=cornerSnap[fid].src==='ht'?'exact':'est';
-  }else{
-    // No snapshot: estimate
-    h1H=Math.round(hC*0.48);h1A=Math.round(aC*0.48);
-    h2H=hC-h1H;h2A=aC-h1A;cSrc='est';
-  }
+  if(in1H){h1H=hC;h1A=aC;h2H=0;h2A=0;cSrc='exact'}
+  else if(cornerSnap[fid]){h1H=cornerSnap[fid].h;h1A=cornerSnap[fid].a;h2H=Math.max(0,hC-h1H);h2A=Math.max(0,aC-h1A);cSrc=cornerSnap[fid].src==='ht'?'exact':'est'}
+  else{h1H=Math.round(hC*0.48);h1A=Math.round(aC*0.48);h2H=hC-h1H;h2A=aC-h1A;cSrc='est'}
   const t1=h1H+h1A, t2=h2H+h2A;
   const rateH=m>0?hC/m:0, rateA=m>0?aC/m:0;
-
-  // Short names
   const hN=g.teams.home.name.length>10?g.teams.home.name.slice(0,8)+'…':g.teams.home.name;
   const aN=g.teams.away.name.length>10?g.teams.away.name.slice(0,8)+'…':g.teams.away.name;
   const maxC=Math.max(hC,aC,h1H,h1A,h2H,h2A,1);
 
   function row(l,h,a,c1,c2){c1=c1||'var(--blue)';c2=c2||'var(--purple)';var t=h+a||1;return'<div class="st-row"><span class="st-val" style="color:'+c1+'">'+h+'</span><div class="st-bar"><div class="st-bar-fill" style="width:'+(h/t*100)+'%;background:'+c1+'"></div></div><span class="st-label">'+l+'</span><div class="st-bar"><div class="st-bar-fill" style="width:'+(a/t*100)+'%;background:'+c2+';margin-left:auto"></div></div><span class="st-val" style="color:'+c2+'">'+a+'</span></div>'}
-
   function halfBar(val,mx,color){var w=mx>0?Math.max(10,val/mx*100):10;return'<div class="chalf-fill" style="width:'+w+'%;background:'+color+'"><span>'+val+'</span></div>'}
 
   var xCv=p==='live'?xC(m,tC):tC;
   var tips=p==='live'?cTips(xCv,m):[];
 
-  // ===== BUILD CORNER DETAIL (all inline) =====
+  // ===== PANEL 1: CORNERS (det-{fid}) =====
   if(det){
     var html='';
+    // Escanteios bar only
+    html+=row('Escanteios',hC,aC);
 
-    // --- STATS ---
-    html+=row('Escanteios',hC,aC)+row('Chutes',sH,sA)
-      +row('No Gol',sgH,sgA,'var(--green)','var(--orange)')
-      +row('Dentro Área',siH,siA,'var(--green)','var(--orange)')
-      +row('Bloqueados',bsH,bsA,'var(--cyan)','var(--purple)')
-      +row('Defesas GK',gsH,gsA,'var(--cyan)','var(--purple)')
-      +row('Posse %',poH||50,poA||50,'var(--cyan)','var(--purple)')
-      +row('Faltas',foH,foA,'var(--orange)','var(--red)')
-      +row('Cartões',yH,yA,'var(--orange)','var(--red)')
-      +row('Impedimentos',oH,oA);
-
-    // --- OPI (Offensive Pressure Index) ---
-    if(p==='live'&&m>3){
-      var opiW=Math.min(100,opiPM/3.5*100);
-      html+='<div class="xcbar" style="margin-top:8px"><div class="xcbar-h"><span class="xcbar-l">OPI <span style="font-size:9px;opacity:.6">(pressão ofensiva)</span></span><span class="xcbar-v" style="color:'+opiColor(opiPM)+'">'+opiPM+'/min</span></div>'
-        +'<div class="xcbar-t"><div class="xcbar-f" style="width:'+opiW+'%;background:'+opiColor(opiPM)+'"></div></div>'
-        +'<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--t3);margin-top:3px">'
-        +'<span style="color:var(--blue)">Casa: '+Math.round(opiH)+'</span>'
-        +'<span style="font-weight:700;color:'+opiColor(opiPM)+'">'+opiLabel(opiPM)+'</span>'
-        +'<span style="color:var(--purple)">Fora: '+Math.round(opiA)+'</span></div></div>';
-    }
-
-    // --- xCorners ---
+    // xCorners
     if(p==='live'){
       html+='<div class="xcbar"><div class="xcbar-h"><span class="xcbar-l">xCorners</span><span class="xcbar-v">'+xCv.toFixed(1)+'</span></div>'
         +'<div class="xcbar-t"><div class="xcbar-f" style="width:'+Math.min(100,xCv/14*100)+'%;background:'+(xCv>=10.5?'var(--green)':xCv>=8.5?'var(--blue)':'var(--orange)')+'"></div></div></div>'
@@ -565,18 +553,16 @@ function renderDet(fid){
       html+='<div style="text-align:center;font-size:11px;color:var(--t3);padding:8px 0">Encerrado — '+tC+' escanteios</div>';
     }
 
-    // --- ESCANTEIOS POR TEMPO ---
+    // Escanteios por Tempo
     html+='<div class="det-sec"><div class="det-sec-title"><span>⏱️</span> Escanteios por Tempo'
       +(cSrc==='exact'?'<span style="font-size:8px;margin-left:6px;padding:1px 5px;background:var(--green-d);color:var(--green);border-radius:4px">EXATO</span>'
         :cSrc==='est'?'<span style="font-size:8px;margin-left:6px;padding:1px 5px;background:var(--orange-d);color:var(--orange);border-radius:4px">ESTIMADO</span>':'')
       +'</div>';
     html+='<div class="chalf">';
-    // 1T box
     html+='<div class="chalf-box"><div class="chalf-label">1º Tempo</div>'
       +'<div class="chalf-row"><div class="chalf-name" style="color:var(--blue)">C</div><div class="chalf-bar">'+halfBar(h1H,maxC,'var(--blue)')+'</div></div>'
       +'<div class="chalf-row"><div class="chalf-name" style="color:var(--purple)">F</div><div class="chalf-bar">'+halfBar(h1A,maxC,'var(--purple)')+'</div></div>'
       +'<div class="chalf-total" style="color:var(--cyan)">'+t1+'</div></div>';
-    // 2T box
     if(m>45||isFin(g.fixture.status)){
       html+='<div class="chalf-box"><div class="chalf-label">2º Tempo</div>'
         +'<div class="chalf-row"><div class="chalf-name" style="color:var(--blue)">C</div><div class="chalf-bar">'+halfBar(h2H,maxC,'var(--blue)')+'</div></div>'
@@ -587,7 +573,7 @@ function renderDet(fid){
     }
     html+='</div></div>';
 
-    // --- CORNER RACE ---
+    // Corner Race
     if(p==='live'&&m>5){
       html+='<div class="det-sec"><div class="det-sec-title"><span>🏁</span> Corner Race</div>';
       html+='<div class="race-names"><span style="color:var(--blue);font-weight:600">'+hN+'</span><span style="color:var(--purple);font-weight:600">'+aN+'</span></div>';
@@ -608,31 +594,20 @@ function renderDet(fid){
         +' × <span style="font-family:JetBrains Mono;color:var(--purple);font-weight:700">'+(rateA*10).toFixed(1)+'/10min</span></div>';
       html+='</div>';
     }
-
     det.innerHTML=html;
   }
 
-  // ===== HT ANALYSIS (Over 0.5 1T panel) =====
+  // ===== PANEL 2: OVER 0.5 1T (htd-{fid}) =====
   if(htd&&p==='live'){
-    // OPI per minute (replaces old IPM)
     var htH,htA,pSrc='est';
     var cH=tHist[norm(g.teams.home.name)],cA=tHist[norm(g.teams.away.name)];
     if(cH!=null&&cA!=null){htH=cH;htA=cA;pSrc='api'}
-    else{
-      // Estimate from OPI: higher OPI = more likely to score
-      var oH_r=m>0?opiH/m:0,oA_r=m>0?opiA/m:0;
-      htH=Math.min(92,Math.round(40+oH_r*12+sgH*4+siH*3));
-      htA=Math.min(92,Math.round(40+oA_r*12+sgA*4+siA*3));
-    }
+    else{var oH_r=m>0?opiH/m:0,oA_r=m>0?opiA/m:0;htH=Math.min(92,Math.round(40+oH_r*12+sgH*4+siH*3));htA=Math.min(92,Math.round(40+oA_r*12+sgA*4+siA*3))}
 
     var odd,oSrc='est',oLab='ESTIMADO';
     var ev=findOdd(g),ro=getOdd(ev);
     if(ro){odd=ro.odd;if(ro.is1){oSrc='api';oLab='REAL 1ºT'}else{oSrc='api';oLab='REAL (jogo)';odd=Math.max(1.01,+(odd*.7).toFixed(2))}}
-    else{
-      // Estimate odd from OPI: higher pressure = lower odd (more likely to score)
-      var ii=m>0?(opiT/m):0;
-      odd=+(1/Math.min(.94,.20+ii*.035)).toFixed(2);
-    }
+    else{var ii=m>0?(opiT/m):0;odd=+(1/Math.min(.94,.20+ii*.035)).toFixed(2)}
 
     var iOk=opiPM>=1.5, pOk=htH>=60&&htA>=60, oOk=odd>=1.80;
     var entry=pOk&&oOk&&iOk, watch=(pOk&&(oOk||iOk))||(oOk&&iOk);
@@ -646,10 +621,13 @@ function renderDet(fid){
       else addSig(fid,tn,'pending');
     }
 
+    // GREEN/RED only shows if entry was recommended
     var res='';
-    if(is1H(g.fixture.status)&&curG>0)res='<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--green-d);color:var(--green);font-size:11px;font-weight:600">⚽ GREEN!</div>';
-    else if((is2H(g.fixture.status)||isHTB(g.fixture.status))&&hasG)res='<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--green-d);color:var(--green);font-size:11px;font-weight:600">⚽ GREEN (2T)</div>';
-    else if((is2H(g.fixture.status)||isHTB(g.fixture.status))&&!hasG)res='<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--red-d);color:var(--red);font-size:11px;font-weight:600">🚫 RED</div>';
+    if(entry||sigHist.find(function(s){return s.id===fid})){
+      if(is1H(g.fixture.status)&&curG>0)res='<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--green-d);color:var(--green);font-size:11px;font-weight:600">⚽ GREEN!</div>';
+      else if((is2H(g.fixture.status)||isHTB(g.fixture.status))&&hasG)res='<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--green-d);color:var(--green);font-size:11px;font-weight:600">⚽ GREEN (2T)</div>';
+      else if((is2H(g.fixture.status)||isHTB(g.fixture.status))&&!hasG)res='<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--red-d);color:var(--red);font-size:11px;font-weight:600">🚫 RED</div>';
+    }
 
     htd.innerHTML='<div class="crit">'
       +'<div class="crit-i '+(pOk?'ok':'no')+'"><div class="crit-icon">'+(pOk?'✅':'❌')+'</div><div class="crit-l">HT≥60%</div><div class="crit-v '+(pOk?'ok':'no')+'">'+Math.round(htH)+'%/'+Math.round(htA)+'%</div><div class="src-tag '+pSrc+'">'+(pSrc==='api'?'REAL':'ESTIMADO')+'</div></div>'
@@ -663,6 +641,69 @@ function renderDet(fid){
       +(!entry&&watch?'<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--orange-d);color:var(--orange);font-size:11px;font-weight:600">👀 MONITORAR</div>':'')
       +res;
     renderHist();
+  }
+
+  // ===== PANEL 3: INFO COMPLETA (inf-{fid}) =====
+  if(inf){
+    var ihtml='';
+    // All stats
+    ihtml+=row('Escanteios',hC,aC)+row('Chutes',sH,sA)
+      +row('No Gol',sgH,sgA,'var(--green)','var(--orange)')
+      +row('Dentro Área',siH,siA,'var(--green)','var(--orange)')
+      +row('Bloqueados',bsH,bsA,'var(--cyan)','var(--purple)')
+      +row('Defesas GK',gsH,gsA,'var(--cyan)','var(--purple)')
+      +row('Posse %',poH||50,poA||50,'var(--cyan)','var(--purple)')
+      +row('Faltas',foH,foA,'var(--orange)','var(--red)')
+      +row('Cartões',yH,yA,'var(--orange)','var(--red)')
+      +row('Impedimentos',oH,oA);
+
+    // OPI bar
+    if(p==='live'&&m>3){
+      var opiW=Math.min(100,opiPM/3.5*100);
+      ihtml+='<div class="xcbar" style="margin-top:8px"><div class="xcbar-h"><span class="xcbar-l">OPI <span style="font-size:9px;opacity:.6">(pressão ofensiva)</span></span><span class="xcbar-v" style="color:'+opiColor(opiPM)+'">'+opiPM+'/min</span></div>'
+        +'<div class="xcbar-t"><div class="xcbar-f" style="width:'+opiW+'%;background:'+opiColor(opiPM)+'"></div></div>'
+        +'<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--t3);margin-top:3px">'
+        +'<span style="color:var(--blue)">Casa: '+Math.round(opiH)+'</span>'
+        +'<span style="font-weight:700;color:'+opiColor(opiPM)+'">'+opiLabel(opiPM)+'</span>'
+        +'<span style="color:var(--purple)">Fora: '+Math.round(opiA)+'</span></div></div>';
+    }
+
+    // Other interesting entries section
+    if(p==='live'&&m>10){
+      ihtml+='<div class="det-sec"><div class="det-sec-title"><span>💡</span> Outras Entradas</div>';
+      var entries=[];
+      // Over 1.5 goals
+      var totalG=(g.goals?.home||0)+(g.goals?.away||0);
+      if(totalG>=1&&m<60&&opiPM>=1.5)entries.push({name:'Over 1.5 Gols',conf:Math.min(90,50+opiPM*15+totalG*10),reason:'Já tem '+totalG+' gol'+(totalG>1?'s':'')+', pressão '+opiLabel(opiPM).toLowerCase()});
+      if(totalG===0&&m>25&&opiPM>=2.0)entries.push({name:'Over 0.5 Gols',conf:Math.min(85,40+opiPM*18),reason:'0×0 mas pressão '+opiLabel(opiPM).toLowerCase()+' ('+sgH+'+'+sgA+' no gol)'});
+      // BTTS
+      var hGoals=g.goals?.home||0,aGoals=g.goals?.away||0;
+      if((hGoals>0||aGoals>0)&&!(hGoals>0&&aGoals>0)&&m<70&&opiPM>=1.5){
+        var missing=hGoals===0?g.teams.home.name:g.teams.away.name;
+        var missOPI=hGoals===0?opiH:opiA;
+        if(m>0&&missOPI/m>=0.5)entries.push({name:'BTTS',conf:Math.min(80,35+missOPI/m*30),reason:missing+' sem gol mas com pressão'});
+      }
+      // Over 8.5 corners
+      if(tC>=5&&m<65){
+        var projC=tC/m*90;
+        if(projC>=9)entries.push({name:'Over 8.5 Esc.',conf:Math.min(88,40+projC*4),reason:'Projeção: '+projC.toFixed(1)+' corners ('+tC+' em '+m+'min)'});
+      }
+
+      if(entries.length){
+        ihtml+=entries.map(function(e){
+          var cColor=e.conf>=70?'var(--green)':e.conf>=50?'var(--cyan)':'var(--orange)';
+          return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg1);border-radius:8px;margin-bottom:4px;border-left:3px solid '+cColor+'">'
+            +'<div style="font-size:12px;font-weight:700;color:'+cColor+';min-width:40px;text-align:center">'+e.conf+'%</div>'
+            +'<div><div style="font-size:11px;font-weight:600;color:var(--t1)">'+e.name+'</div>'
+            +'<div style="font-size:9px;color:var(--t3)">'+e.reason+'</div></div></div>';
+        }).join('');
+      }else{
+        ihtml+='<div style="font-size:11px;color:var(--t3);text-align:center;padding:8px">Sem entradas relevantes no momento.</div>';
+      }
+      ihtml+='</div>';
+    }
+
+    inf.innerHTML=ihtml;
   }
 }
 
