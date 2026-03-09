@@ -291,6 +291,13 @@ let apiN=0,oddsN=0,isDemoMode=false,soundOn=false,cFilt='all',cLg='all';
 let sigHist=JSON.parse(localStorage.getItem('cs3_hist')||'[]');
 // Corner snapshot: grava corners no HT pra split exato no 2T
 let cornerSnap={}; // fid -> {h:N, a:N, min:N, src:'ht'|'est'}
+// Momentum: previous stats for delta tracking
+let gPrevStats={}; // fid -> {ts, opiT, shots, corners, ...}
+let gMomentum={}; // fid -> {delta, heat:'hot'|'warm'|'cold', trend}
+// Extra data (1 req each, cached)
+let gPredictions={}; // fid -> {data, _ts}
+let gH2H={}; // "homeId-awayId" -> {data, _ts}
+let gTeamStats={}; // "teamId-leagueId" -> {data, _ts}
 
 // STATUS
 function isLive(s){return['1H','2H','HT','ET','P','BT','LIVE'].includes(s?.short)}
@@ -346,6 +353,88 @@ function updateCornerSnap(fid,g,st){
     cornerSnap[fid]={h:Math.round(hC*0.48),a:Math.round(aC*0.48),min:45,src:'est'};
   }
 }
+
+// MOMENTUM TRACKER — compares current vs previous stats
+function updateMomentum(fid,st,g){
+  if(!st||!g)return;
+  var m=minN(g.fixture.status);if(m<5)return;
+  var hI=g.teams.home.id,aI=g.teams.away.id;
+  var opiH=calcOPI(st,hI,aI),opiA=calcOPI(st,aI,hI),opiT=opiH+opiA;
+  var shots=getStat(st,hI,'Total Shots')+getStat(st,aI,'Total Shots');
+  var corners=getStat(st,hI,'Corner Kicks')+getStat(st,aI,'Corner Kicks');
+  var sgol=getStat(st,hI,'Shots on Goal')+getStat(st,aI,'Shots on Goal');
+  var now={ts:Date.now(),min:m,opiT:opiT,shots:shots,corners:corners,sgol:sgol};
+  var prev=gPrevStats[fid];
+  if(prev&&now.min>prev.min){
+    var dm=now.min-prev.min;if(dm<1)dm=1;
+    var dOpi=(now.opiT-prev.opiT)/dm;
+    var dShots=(now.shots-prev.shots)/dm;
+    var dCorners=(now.corners-prev.corners)/dm;
+    var dSgol=(now.sgol-prev.sgol)/dm;
+    // Heat score: weighted delta
+    var heat=dOpi*0.4+dShots*2+dCorners*3+dSgol*4;
+    var level=heat>=2?'hot':heat>=0.8?'warm':'cold';
+    var trend=dOpi>0.5?'up':dOpi<-0.3?'down':'stable';
+    gMomentum[fid]={delta:+heat.toFixed(1),heat:level,trend:trend,dOpi:+dOpi.toFixed(2),dShots:+dShots.toFixed(2),dCorners:+dCorners.toFixed(2)};
+  }
+  gPrevStats[fid]=now;
+}
+function heatBadge(fid){
+  var mo=gMomentum[fid];if(!mo)return'';
+  if(mo.heat==='hot')return'<span style="font-size:9px;padding:1px 5px;background:#f59e0b22;color:#f59e0b;border-radius:4px;font-weight:700">🔥 QUENTE</span>';
+  if(mo.heat==='warm')return'<span style="font-size:9px;padding:1px 5px;background:#3b82f622;color:#3b82f6;border-radius:4px;font-weight:600">⬆️ Subindo</span>';
+  return'';
+}
+
+// ENTRY WINDOW — optimal timing for Over 0.5 1T
+function entryWindow(m,opiPM,score,odd){
+  var curG=(score?.home||0)+(score?.away||0);
+  if(curG>0)return{signal:'green',label:'JÁ MARCOU',desc:'Gol saiu — mercado fechado'};
+  if(m>=40)return{signal:'red',label:'TARDE',desc:'Pouco tempo restante, odd muito baixa'};
+  if(m>=30){
+    if(opiPM>=2.0)return{signal:'yellow',label:'ARRISCADO',desc:'Pressão alta mas tempo curto. Odd caindo.'};
+    return{signal:'red',label:'EVITAR',desc:'Sem pressão e pouco tempo'};
+  }
+  if(m>=15){
+    if(opiPM>=1.5&&odd>=1.60)return{signal:'green',label:'IDEAL',desc:'Pressão boa + odd ainda paga + tempo'};
+    if(opiPM>=1.5)return{signal:'yellow',label:'BOM',desc:'Pressão ok mas odd baixa'};
+    return{signal:'yellow',label:'AGUARDAR',desc:'Pressão baixa, monitorar'};
+  }
+  if(m>=5){
+    if(opiPM>=2.0)return{signal:'green',label:'CEDO + QUENTE',desc:'Jogo começou forte!'};
+    return{signal:'yellow',label:'CEDO',desc:'Poucos dados, aguardar min 15'};
+  }
+  return{signal:'gray',label:'INÍCIO',desc:'Sem dados suficientes'};
+}
+function ewColor(s){return s==='green'?'var(--green)':s==='yellow'?'var(--orange)':s==='red'?'var(--red)':'var(--t3)'}
+
+// FETCH PREDICTIONS (1 req/game, cached session)
+async function fetchPredictions(fid){
+  if(gPredictions[fid]?._ts&&Date.now()-gPredictions[fid]._ts<3600000)return gPredictions[fid].data;
+  var d=await apiFB('predictions',{fixture:fid});
+  if(d&&d.length){gPredictions[fid]={data:d[0],_ts:Date.now()};return d[0]}
+  return null;
+}
+// FETCH H2H (1 req/matchup, cached session)
+async function fetchH2H(hId,aId){
+  var k=hId+'-'+aId;
+  if(gH2H[k]?._ts&&Date.now()-gH2H[k]._ts<3600000)return gH2H[k].data;
+  var d=await apiFB('fixtures/headtohead',{h2h:hId+'-'+aId,last:6});
+  if(d){gH2H[k]={data:d,_ts:Date.now()};return d}
+  return null;
+}
+// FETCH TEAM SEASON STATS (1 req/team/day, cached 24h)
+async function fetchTeamSeason(teamId,leagueId,season){
+  if(!season)season=new Date().getFullYear();
+  var k=teamId+'-'+leagueId;
+  var ck='cs3ts_'+k;
+  var c=localStorage.getItem(ck);
+  if(c){try{var j=JSON.parse(c);if(Date.now()-j.ts<HIST_TTL)return j.d}catch(e){}}
+  var d=await apiFB('teams/statistics',{team:teamId,league:leagueId,season:season});
+  if(d){localStorage.setItem(ck,JSON.stringify({ts:Date.now(),d:d}));return d}
+  return null;
+}
+
 function norm(n){return n.toLowerCase().replace(/\b(fc|sc|ac|cf|ssc|rj|sp|mg)\b/g,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim()}
 
 // FETCH
@@ -396,7 +485,7 @@ async function fetchLive(){
 }
 
 // FETCH STATS (on-demand, cached 60s)
-async function fetchStats(fid){if(gStats[fid]?._ts&&Date.now()-gStats[fid]._ts<60000)return gStats[fid];const d=await apiFB('fixtures/statistics',{fixture:fid});if(d){d._ts=Date.now();gStats[fid]=d;const g=games.find(g=>g.fixture.id===fid);updateCornerSnap(fid,g,d)}return d}
+async function fetchStats(fid){if(gStats[fid]?._ts&&Date.now()-gStats[fid]._ts<60000)return gStats[fid];const d=await apiFB('fixtures/statistics',{fixture:fid});if(d){d._ts=Date.now();gStats[fid]=d;const g=games.find(g=>g.fixture.id===fid);updateCornerSnap(fid,g,d);updateMomentum(fid,d,g)}return d}
 async function fetchEvents(fid){if(gEvents[fid]?._ts&&Date.now()-gEvents[fid]._ts<60000)return gEvents[fid];const d=await apiFB('fixtures/events',{fixture:fid});if(d){const r={all:d,corners:[],_ts:Date.now()};d.forEach(e=>{if(e.detail==='Corner'||e.type==='Corner'||(e.comments||'').toLowerCase().includes('corner'))r.corners.push({team:e.team?.id,min:e.time?.elapsed||0,extra:e.time?.extra||0,side:null})});gEvents[fid]=r}return gEvents[fid]}
 
 // Parse corner events into 1H/2H splits
@@ -457,7 +546,7 @@ function renderAll(){
     +'<div class="gcard-b"><div class="teams"><div class="tcol">'+(g.teams.home.logo?'<img class="tlogo" src="'+g.teams.home.logo+'">':'<div class="tph"></div>')+'<div class="tname">'+g.teams.home.name+'</div></div>'
     +'<div class="scol">'+(p==='sched'?'vs':((g.goals.home??0)+' - '+(g.goals.away??0)))+'<span class="hts">'+(p==='sched'?'Pré-jogo':'HT: '+(g.score?.halftime?.home??'-')+' - '+(g.score?.halftime?.away??'-'))+'</span></div>'
     +'<div class="tcol">'+(g.teams.away.logo?'<img class="tlogo" src="'+g.teams.away.logo+'">':'<div class="tph"></div>')+'<div class="tname">'+g.teams.away.name+'</div></div></div>'
-    +(!ex?'<div class="expand-hint">'+(p==='live'?'🔍 Toque para stats ao vivo':'📊 Toque para detalhes')+'</div>':'')
+    +(!ex?'<div class="expand-hint">'+(p==='live'?heatBadge(f)+' 🔍 Toque para stats ao vivo':'📊 Toque para detalhes')+'</div>':'')
     +'<div class="detail" id="det-'+f+'">'+(ex&&!gStats[f]?'<div class="detail-loading"><div class="mini-spin"></div>Carregando...</div>':'')+'</div>'
     +(ex?'<button class="collapse-btn" onclick="event.stopPropagation();collapse('+f+')">▲ Fechar</button>':'')
     +'</div></div>'}).join('');
@@ -494,7 +583,11 @@ async function toggle(fid){if(expanded.has(fid)){collapse(fid);return}expanded.a
   const g=games.find(g=>g.fixture.id===fid);if(!g)return;
   await fetchStats(fid);
   for(const s of['home','away']){const n=norm(g.teams[s].name);if(tHist[n]===undefined)tHist[n]=await fetchHT(g.teams[s].name,g.league.id)}
-  renderDet(fid)}
+  renderDet(fid);
+  // Fetch extra data in background (non-blocking)
+  fetchPredictions(fid).then(()=>renderDet(fid));
+  fetchH2H(g.teams.home.id,g.teams.away.id).then(()=>renderDet(fid));
+}
 function collapse(fid){expanded.delete(fid);renderAll()}
 
 // RENDER DETAIL — 3 panels: det (corners), htd (Over 0.5), inf (info)
@@ -629,14 +722,29 @@ function renderDet(fid){
       else if((is2H(g.fixture.status)||isHTB(g.fixture.status))&&!hasG)res='<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--red-d);color:var(--red);font-size:11px;font-weight:600">🚫 RED</div>';
     }
 
+    // Entry window timing
+    var ew=entryWindow(m,opiPM,g.goals,odd);
+    // Momentum badge
+    var mo=gMomentum[fid];
+    var moBadge=mo?'<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--bg1);border-radius:8px;font-size:10px;color:var(--t3);margin-top:6px">'
+      +'<span>Momentum:</span>'
+      +'<span style="font-weight:700;color:'+(mo.heat==='hot'?'#f59e0b':mo.heat==='warm'?'var(--cyan)':'var(--t3)')+'">'+mo.delta+' '+(mo.heat==='hot'?'🔥':mo.heat==='warm'?'⬆️':'➡️')+'</span>'
+      +'<span style="opacity:.6">Δchutes '+mo.dShots+'/min | Δcorners '+mo.dCorners+'/min</span></div>':'';
+
     htd.innerHTML='<div class="crit">'
       +'<div class="crit-i '+(pOk?'ok':'no')+'"><div class="crit-icon">'+(pOk?'✅':'❌')+'</div><div class="crit-l">HT≥60%</div><div class="crit-v '+(pOk?'ok':'no')+'">'+Math.round(htH)+'%/'+Math.round(htA)+'%</div><div class="src-tag '+pSrc+'">'+(pSrc==='api'?'REAL':'ESTIMADO')+'</div></div>'
       +'<div class="crit-i '+(oOk?'ok':'no')+'"><div class="crit-icon">'+(oOk?'✅':'❌')+'</div><div class="crit-l">Odd≥1.80</div><div class="crit-v '+(oOk?'ok':'no')+'">'+odd+'</div><div class="src-tag '+oSrc+'">'+oLab+'</div></div>'
       +'<div class="crit-i '+(iOk?'ok':'no')+'"><div class="crit-icon">'+(iOk?'✅':'❌')+'</div><div class="crit-l">OPI</div><div class="crit-v '+(iOk?'ok':'no')+'" style="color:'+opiColor(opiPM)+'">'+opiPM+'/min</div><div class="src-tag api">'+opiLabel(opiPM)+'</div></div>'
       +'</div>'
-      +'<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg1);border-radius:8px;font-size:11px;color:var(--t3)">'
+      // Entry Window
+      +'<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;margin-top:8px;background:var(--bg1);border-radius:8px;border-left:3px solid '+ewColor(ew.signal)+'">'
+      +'<div style="font-size:11px;font-weight:700;color:'+ewColor(ew.signal)+'">⏱ '+ew.label+'</div>'
+      +'<div style="font-size:10px;color:var(--t3)">'+ew.desc+'</div></div>'
+      // Stats summary
+      +'<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg1);border-radius:8px;font-size:11px;color:var(--t3);margin-top:4px">'
       +'<span>Gol: '+sgH+'×'+sgA+' | Área: '+siH+'×'+siA+' | Bloq: '+bsH+'×'+bsA+' | Def: '+gsH+'×'+gsA+'</span>'
       +'<span style="font-family:JetBrains Mono;font-weight:700;color:'+opiColor(opiPM)+'">'+opiPM+'</span></div>'
+      +moBadge
       +(entry?'<div style="text-align:center;padding:8px;border-radius:8px;margin-top:8px;background:var(--green-d);color:var(--green);font-size:12px;font-weight:700;border:1px solid rgba(0,232,123,.3)">✅ ENTRADA</div>':'')
       +(!entry&&watch?'<div style="text-align:center;padding:6px;border-radius:8px;margin-top:8px;background:var(--orange-d);color:var(--orange);font-size:11px;font-weight:600">👀 MONITORAR</div>':'')
       +res;
@@ -668,27 +776,86 @@ function renderDet(fid){
         +'<span style="color:var(--purple)">Fora: '+Math.round(opiA)+'</span></div></div>';
     }
 
-    // Other interesting entries section
+    // MOMENTUM
+    var mo=gMomentum[fid];
+    if(mo){
+      ihtml+='<div class="det-sec"><div class="det-sec-title"><span>'+(mo.heat==='hot'?'🔥':mo.heat==='warm'?'⬆️':'➡️')+'</span> Momentum</div>'
+        +'<div style="display:flex;gap:10px;font-size:11px">'
+        +'<div style="flex:1;padding:6px 8px;background:var(--bg1);border-radius:6px;text-align:center"><div style="font-size:9px;color:var(--t3)">Heat</div><div style="font-weight:700;color:'+(mo.heat==='hot'?'#f59e0b':mo.heat==='warm'?'var(--cyan)':'var(--t3)')+'">'+mo.delta+'</div></div>'
+        +'<div style="flex:1;padding:6px 8px;background:var(--bg1);border-radius:6px;text-align:center"><div style="font-size:9px;color:var(--t3)">ΔChutes</div><div style="font-weight:700;color:var(--t1)">'+mo.dShots+'/min</div></div>'
+        +'<div style="flex:1;padding:6px 8px;background:var(--bg1);border-radius:6px;text-align:center"><div style="font-size:9px;color:var(--t3)">ΔCorners</div><div style="font-weight:700;color:var(--t1)">'+mo.dCorners+'/min</div></div>'
+        +'<div style="flex:1;padding:6px 8px;background:var(--bg1);border-radius:6px;text-align:center"><div style="font-size:9px;color:var(--t3)">Trend</div><div style="font-weight:700;color:'+(mo.trend==='up'?'var(--green)':mo.trend==='down'?'var(--red)':'var(--t3)')+'">'+({up:'↑ Subindo',down:'↓ Caindo',stable:'→ Estável'}[mo.trend])+'</div></div>'
+        +'</div></div>';
+    }
+
+    // PREDICTIONS (from API)
+    var pred=gPredictions[fid]?.data;
+    if(pred){
+      ihtml+='<div class="det-sec"><div class="det-sec-title"><span>🤖</span> Previsão API</div>';
+      var pp=pred.predictions;
+      if(pp){
+        ihtml+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+        if(pp.winner)ihtml+='<div style="flex:1;min-width:80px;padding:6px 8px;background:var(--bg1);border-radius:6px;text-align:center"><div style="font-size:9px;color:var(--t3)">Vencedor</div><div style="font-size:11px;font-weight:700;color:var(--t1)">'+(pp.winner.name||'Empate')+'</div></div>';
+        if(pp.goals){
+          ihtml+='<div style="flex:1;min-width:80px;padding:6px 8px;background:var(--bg1);border-radius:6px;text-align:center"><div style="font-size:9px;color:var(--t3)">Gols Prev.</div><div style="font-size:11px;font-weight:700;color:var(--cyan)">'+(pp.goals.home||'?')+' - '+(pp.goals.away||'?')+'</div></div>';
+        }
+        if(pp.advice)ihtml+='<div style="flex:1;min-width:120px;padding:6px 8px;background:var(--bg1);border-radius:6px;text-align:center"><div style="font-size:9px;color:var(--t3)">Conselho</div><div style="font-size:10px;font-weight:600;color:var(--green)">'+pp.advice+'</div></div>';
+        ihtml+='</div>';
+      }
+      // Win percentages
+      var pc=pred.predictions?.percent;
+      if(pc){
+        ihtml+='<div style="display:flex;gap:2px;margin-top:6px;height:18px;border-radius:4px;overflow:hidden;font-size:9px;font-weight:700">'
+          +'<div style="width:'+pc.home+';background:var(--blue);display:flex;align-items:center;justify-content:center;color:#fff">C '+pc.home+'</div>'
+          +'<div style="width:'+pc.draw+';background:var(--t3);display:flex;align-items:center;justify-content:center;color:#fff">E '+pc.draw+'</div>'
+          +'<div style="width:'+pc.away+';background:var(--purple);display:flex;align-items:center;justify-content:center;color:#fff">F '+pc.away+'</div>'
+          +'</div>';
+      }
+      ihtml+='</div>';
+    }
+
+    // H2H
+    var h2hData=gH2H[g.teams.home.id+'-'+g.teams.away.id]?.data;
+    if(h2hData&&h2hData.length){
+      ihtml+='<div class="det-sec"><div class="det-sec-title"><span>⚔️</span> Confronto Direto (últimos '+h2hData.length+')</div>';
+      var hWins=0,aWins=0,draws=0;
+      h2hData.forEach(function(mx){
+        var hg=mx.goals?.home||0,ag=mx.goals?.away||0;
+        var hIsHome=mx.teams?.home?.id===g.teams.home.id;
+        if(hg===ag)draws++;
+        else if((hg>ag&&hIsHome)||( ag>hg&&!hIsHome))hWins++;
+        else aWins++;
+      });
+      ihtml+='<div style="display:flex;gap:8px;margin-bottom:6px">'
+        +'<div style="flex:1;padding:6px;background:var(--bg1);border-radius:6px;text-align:center"><div style="font-size:9px;color:var(--t3)">'+hN+'</div><div style="font-size:16px;font-weight:800;color:var(--blue)">'+hWins+'</div></div>'
+        +'<div style="flex:1;padding:6px;background:var(--bg1);border-radius:6px;text-align:center"><div style="font-size:9px;color:var(--t3)">Empates</div><div style="font-size:16px;font-weight:800;color:var(--t2)">'+draws+'</div></div>'
+        +'<div style="flex:1;padding:6px;background:var(--bg1);border-radius:6px;text-align:center"><div style="font-size:9px;color:var(--t3)">'+aN+'</div><div style="font-size:16px;font-weight:800;color:var(--purple)">'+aWins+'</div></div>'
+        +'</div>';
+      // Last results
+      ihtml+='<div style="display:flex;gap:3px;justify-content:center">'+h2hData.slice(0,6).map(function(mx){
+        var hg=mx.goals?.home||0,ag=mx.goals?.away||0;
+        var hIsHome=mx.teams?.home?.id===g.teams.home.id;
+        var result=(hg===ag)?'E':((hg>ag&&hIsHome)||(ag>hg&&!hIsHome))?'C':'F';
+        var c=result==='C'?'var(--blue)':result==='F'?'var(--purple)':'var(--t3)';
+        return'<div style="width:22px;height:22px;border-radius:4px;background:'+c+';display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff" title="'+hg+'-'+ag+'">'+hg+'-'+ag+'</div>';
+      }).join('')+'</div>';
+      ihtml+='</div>';
+    }
+
+    // Other interesting entries
     if(p==='live'&&m>10){
       ihtml+='<div class="det-sec"><div class="det-sec-title"><span>💡</span> Outras Entradas</div>';
       var entries=[];
-      // Over 1.5 goals
       var totalG=(g.goals?.home||0)+(g.goals?.away||0);
       if(totalG>=1&&m<60&&opiPM>=1.5)entries.push({name:'Over 1.5 Gols',conf:Math.min(90,50+opiPM*15+totalG*10),reason:'Já tem '+totalG+' gol'+(totalG>1?'s':'')+', pressão '+opiLabel(opiPM).toLowerCase()});
       if(totalG===0&&m>25&&opiPM>=2.0)entries.push({name:'Over 0.5 Gols',conf:Math.min(85,40+opiPM*18),reason:'0×0 mas pressão '+opiLabel(opiPM).toLowerCase()+' ('+sgH+'+'+sgA+' no gol)'});
-      // BTTS
       var hGoals=g.goals?.home||0,aGoals=g.goals?.away||0;
       if((hGoals>0||aGoals>0)&&!(hGoals>0&&aGoals>0)&&m<70&&opiPM>=1.5){
         var missing=hGoals===0?g.teams.home.name:g.teams.away.name;
         var missOPI=hGoals===0?opiH:opiA;
         if(m>0&&missOPI/m>=0.5)entries.push({name:'BTTS',conf:Math.min(80,35+missOPI/m*30),reason:missing+' sem gol mas com pressão'});
       }
-      // Over 8.5 corners
-      if(tC>=5&&m<65){
-        var projC=tC/m*90;
-        if(projC>=9)entries.push({name:'Over 8.5 Esc.',conf:Math.min(88,40+projC*4),reason:'Projeção: '+projC.toFixed(1)+' corners ('+tC+' em '+m+'min)'});
-      }
-
+      if(tC>=5&&m<65){var projC=tC/m*90;if(projC>=9)entries.push({name:'Over 8.5 Esc.',conf:Math.min(88,40+projC*4),reason:'Projeção: '+projC.toFixed(1)+' corners ('+tC+' em '+m+'min)'});}
       if(entries.length){
         ihtml+=entries.map(function(e){
           var cColor=e.conf>=70?'var(--green)':e.conf>=50?'var(--cyan)':'var(--orange)';
